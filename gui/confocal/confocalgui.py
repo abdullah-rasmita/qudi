@@ -442,6 +442,11 @@ class ConfocalGui(GUIBase):
         # 1 nanometer resolution per one change, units are meters
         self.slider_res = 1e-9
 
+        # start - temporary change - Abdullah - 20170603
+        # 1 nm resolution in term of micrometer
+        self.slider_res = 1e-3
+        # end - temporary change - Abdullah - 20170603
+
         # How many points are needed for that kind of resolution:
         num_of_points_x = (self._scanning_logic.x_range[1] - self._scanning_logic.x_range[0]) / self.slider_res
         num_of_points_y = (self._scanning_logic.y_range[1] - self._scanning_logic.y_range[0]) / self.slider_res
