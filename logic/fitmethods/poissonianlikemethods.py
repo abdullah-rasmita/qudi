@@ -27,6 +27,8 @@ from lmfit import Parameters
 from scipy.signal import gaussian
 from scipy.ndimage import filters
 from scipy.interpolate import InterpolatedUnivariateSpline
+from collections import OrderedDict
+
 
 from scipy.special import gammaln, xlogy
 
@@ -154,7 +156,7 @@ def make_poissoniandouble_model(self):
 ################################################################################
 
 
-def make_poissonian_fit(self, x_axis, data, estimator, units=None, add_params=None):
+def make_poissonian_fit(self, x_axis, data, estimator, units=None, add_params=None, **kwargs):
     """ Performe a poissonian fit on the provided data.
 
     @param numpy.array x_axis: 1D axis values
@@ -179,14 +181,29 @@ def make_poissonian_fit(self, x_axis, data, estimator, units=None, add_params=No
                                      update_params=add_params)
 
     try:
-        result = poissonian_model.fit(data, x=x_axis, params=params)
+        result = poissonian_model.fit(data, x=x_axis, params=params, **kwargs)
     except:
         self.log.warning('The poissonian fit did not work. Check if a poisson '
                          'distribution is needed or a normal approximation can be'
                          'used. For values above 10 a normal/ gaussian distribution '
                          'is a good approximation.')
-        result = poissonian_model.fit(data, x=x_axis, params=params)
+        result = poissonian_model.fit(data, x=x_axis, params=params, **kwargs)
         print(result.message)
+
+    if units is None:
+        units = ['arb. unit', 'arb. unit']
+
+    result_str_dict = dict()  # create result string for gui   oder OrderedDict()
+
+    result_str_dict['Amplitude'] = {'value': result.params['amplitude'].value,
+                                    'error': result.params['amplitude'].stderr,
+                                    'unit': units[1]}     # Amplitude
+
+    result_str_dict['Event rate'] = {'value': result.params['mu'].value,
+                                    'error': result.params['mu'].stderr,
+                                    'unit': units[0]}      # event rate
+
+    result.result_str_dict = result_str_dict
 
     return result
 
@@ -223,7 +240,7 @@ def estimate_poissonian(self, x_axis, data, params):
     return error, params
 
 
-def make_poissoniandouble_fit(self, x_axis, data, estimator, units=None, add_params=None):
+def make_poissoniandouble_fit(self, x_axis, data, estimator, units=None, add_params=None, **kwargs):
     """ Perform a double poissonian fit on the provided data.
 
     @param numpy.array x_axis: 1D axis values
@@ -248,14 +265,37 @@ def make_poissoniandouble_fit(self, x_axis, data, estimator, units=None, add_par
                                      update_params=add_params)
 
     try:
-        result = double_poissonian_model.fit(data, x=x_axis, params=params)
+        result = double_poissonian_model.fit(data, x=x_axis, params=params, **kwargs)
     except:
         self.log.warning('The double poissonian fit did not work. Check if a '
                          'poisson distribution is needed or a normal '
                          'approximation can be used. For values above 10 a '
                          'normal/ gaussian distribution is a good '
                          'approximation.')
-        result = double_poissonian_model.fit(data, x=x_axis, params=params)
+        result = double_poissonian_model.fit(data, x=x_axis, params=params, **kwargs)
+
+    # Write the parameters to allow human-readable output to be generated
+    result_str_dict = OrderedDict()
+    if units is None:
+        units = ["arb. units", 'arb. unit']
+
+    result_str_dict['Amplitude 1'] = {'value': result.params['p0_amplitude'].value,
+                                      'error': result.params['p0_amplitude'].stderr,
+                                      'unit': units[0]}
+
+    result_str_dict['Event rate 1'] = {'value': result.params['p0_mu'].value,
+                                       'error': result.params['p0_mu'].stderr,
+                                       'unit':  units[1]}
+
+    result_str_dict['Amplitude 2'] = {'value': result.params['p1_amplitude'].value,
+                                      'error': result.params['p1_amplitude'].stderr,
+                                      'unit': units[0]}
+
+    result_str_dict['Event rate 2'] = {'value': result.params['p1_mu'].value,
+                                       'error': result.params['p1_mu'].stderr,
+                                       'unit':  units[1]}
+
+    result.result_str_dict = result_str_dict
 
     return result
 

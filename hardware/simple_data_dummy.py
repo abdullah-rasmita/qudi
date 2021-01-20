@@ -22,15 +22,19 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 import numpy as np
 import time
 
-from core.base import Base
+from core.module import Base
 from interface.simple_data_interface import SimpleDataInterface
 
 
 class SimpleDummy(Base, SimpleDataInterface):
+    """ A simple Data generator dummy.
+
+    Example config for copy-paste:
+
+    simple_data_dummy:
+        module.Class: 'simple_data_dummy.SimpleDummy'
+
     """
-    """
-    _modclass = 'simple'
-    _modtype = 'hardware'
 
     def on_activate(self):
         pass

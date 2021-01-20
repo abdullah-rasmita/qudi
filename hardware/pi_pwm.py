@@ -20,7 +20,8 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 """
 
 
-from core.base import Base
+from core.module import Base
+from core.configoption import ConfigOption
 from interface.process_control_interface import ProcessControlInterface
 from core.util.mutex import Mutex
 
@@ -29,10 +30,17 @@ import RPi.GPIO as GPIO
 
 class PiPWM(Base, ProcessControlInterface):
     """ Hardware module for Raspberry Pi-based PWM controller.
-    """
 
-    _modclass = 'ProcessControlInterface'
-    _modtype = 'hardware'
+    Example config for copy-paste:
+
+    pi_pwm:
+        module.Class: 'pi_pwm.PiPWM'
+        channel: 0
+        frequency: 100 # in Hz
+
+    """
+    channel = ConfigOption('channel', 0, missing='warn')
+    freq = ConfigOption('frequency', 100)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -43,16 +51,8 @@ class PiPWM(Base, ProcessControlInterface):
     def on_activate(self):
         """ Activate module.
         """
-        config = self.getConfiguration()
-
-        if 'channel' in config:
-            channel = config['channel']
-        else:
-            channel = 0
-            self.log.warning('PWN channel not set, using 0')
-
         # pin mapping
-        if channel == 0:
+        if self.channel == 0:
             self.inapin = 5
             self.inbpin = 22
             self.pwmpin = 24
@@ -71,11 +71,6 @@ class PiPWM(Base, ProcessControlInterface):
             self.dibpin = 6
             self.fanpin = 13
 
-        if 'frequency' in config:
-            self.freq = config['frequency']
-        else:
-            self.freq = 100
-            self.log.warning('Frequency not set, using 100Hz.')
         self.setupPins()
         self.startPWM()
 
@@ -136,7 +131,7 @@ class PiPWM(Base, ProcessControlInterface):
             GPIO.output(self.inbpin, True)
         self.p.ChangeDutyCycle(abs(duty))
 
-    def setControlValue(self, value):
+    def set_control_value(self, value):
         """ Set control value for this controller.
 
             @param float value: control value, in this case duty cycle in percent
@@ -144,26 +139,26 @@ class PiPWM(Base, ProcessControlInterface):
         with self.threadlock:
             self.changeDutyCycle(value)
 
-    def getControlValue(self):
+    def get_control_value(self):
         """ Get control value for this controller.
 
             @return float: control value, in this case duty cycle in percent
         """
         return self.dutycycle
 
-    def getControlUnit(self):
+    def get_control_unit(self):
         """ Get unit for control value.
 
             @return tuple(str, str): short and text form of unit
         """
-        return ('%', 'percent')
+        return '%', 'percent'
 
-    def getControlLimits(self):
+    def get_control_limit(self):
         """ Get minimum and maxuimum value for control value.
 
             @return tuple(float, float): min and max control value
         """
-        return (-100, 100)
+        return -100, 100
 
 
 class PiPWMHalf(PiPWM):
@@ -175,9 +170,9 @@ class PiPWMHalf(PiPWM):
         #locking for thread safety
         self.threadlock = Mutex()
 
-    def getControlLimits(self):
+    def get_control_limit(self):
         """ Get minimum and maxuimum value for control value.
 
             @return tuple(float, float): min and max control value
         """
-        return (0, 100)
+        return 0, 100

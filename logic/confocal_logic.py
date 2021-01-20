@@ -27,10 +27,11 @@ import datetime
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from io import BytesIO
 
 from logic.generic_logic import GenericLogic
 from core.util.mutex import Mutex
+from core.connector import Connector
+from core.statusvariable import StatusVar
 
 
 class OldConfigFileError(Exception):
@@ -251,14 +252,15 @@ class ConfocalLogic(GenericLogic):
     """
     This is the Logic class for confocal scanning.
     """
-    _modclass = 'confocallogic'
-    _modtype = 'logic'
 
     # declare connectors
-    _connectors = {
-        'confocalscanner1': 'ConfocalScannerInterface',
-        'savelogic': 'SaveLogic'
-        }
+    confocalscanner1 = Connector(interface='ConfocalScannerInterface')
+    savelogic = Connector(interface='SaveLogic')
+
+    # status vars
+    _clock_frequency = StatusVar('clock_frequency', 500)
+    return_slowness = StatusVar(default=50)
+    max_history_length = StatusVar(default=10)
 
     # signals
     signal_start_scanning = QtCore.Signal(str)
@@ -268,12 +270,16 @@ class ConfocalLogic(GenericLogic):
     signal_xy_image_updated = QtCore.Signal()
     signal_depth_image_updated = QtCore.Signal()
     signal_change_position = QtCore.Signal(str)
+    signal_save_started = QtCore.Signal()
     signal_xy_data_saved = QtCore.Signal()
     signal_depth_data_saved = QtCore.Signal()
     signal_tilt_correction_active = QtCore.Signal(bool)
     signal_tilt_correction_update = QtCore.Signal()
     signal_draw_figure_completed = QtCore.Signal()
     signal_position_changed = QtCore.Signal()
+
+    _signal_save_xy = QtCore.Signal(object, object)
+    _signal_save_depth = QtCore.Signal(object, object)
 
     sigImageXYInitialized = QtCore.Signal()
     sigImageDepthInitialized = QtCore.Signal()
@@ -282,12 +288,6 @@ class ConfocalLogic(GenericLogic):
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
-
-        self.log.info('The following configuration was found.')
-
-        # checking for the right configuration
-        for key in config.keys():
-            self.log.info('{0}: {1}'.format(key, config[key]))
 
         #locking for thread safety
         self.threadlock = Mutex()
@@ -303,19 +303,8 @@ class ConfocalLogic(GenericLogic):
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
-        self._scanning_device = self.get_connector('confocalscanner1')
-        self._save_logic = self.get_connector('savelogic')
-
-        #default values for clock frequency and slowness
-        #slowness: steps during retrace line
-        if 'clock_frequency' in self._statusVariables:
-            self._clock_frequency = self._statusVariables['clock_frequency']
-        else:
-            self._clock_frequency = 500
-        if 'return_slowness' in self._statusVariables:
-            self.return_slowness = self._statusVariables['return_slowness']
-        else:
-            self.return_slowness = 50
+        self._scanning_device = self.confocalscanner1()
+        self._save_logic = self.savelogic()
 
         # Reads in the maximal scanning range. The unit of that scan range is micrometer!
         self.x_range = self._scanning_device.get_position_range()[0]
@@ -324,24 +313,20 @@ class ConfocalLogic(GenericLogic):
 
         # restore here ...
         self.history = []
-        if 'max_history_length' in self._statusVariables:
-                self.max_history_length = self._statusVariables['max_history_length']
-                for i in reversed(range(1, self.max_history_length)):
-                    try:
-                        new_history_item = ConfocalHistoryEntry(self)
-                        new_history_item.deserialize(
-                            self._statusVariables['history_{0}'.format(i)])
-                        self.history.append(new_history_item)
-                    except KeyError:
-                        pass
-                    except OldConfigFileError:
-                        self.log.warning(
-                            'Old style config file detected. History {0} ignored.'.format(i))
-                    except:
-                        self.log.warning(
-                                'Restoring history {0} failed.'.format(i))
-        else:
-            self.max_history_length = 10
+        for i in reversed(range(1, self.max_history_length)):
+            try:
+                new_history_item = ConfocalHistoryEntry(self)
+                new_history_item.deserialize(
+                    self._statusVariables['history_{0}'.format(i)])
+                self.history.append(new_history_item)
+            except KeyError:
+                pass
+            except OldConfigFileError:
+                self.log.warning(
+                    'Old style config file detected. History {0} ignored.'.format(i))
+            except:
+                self.log.warning(
+                        'Restoring history {0} failed.'.format(i))
         try:
             new_state = ConfocalHistoryEntry(self)
             new_state.deserialize(self._statusVariables['history_0'])
@@ -359,6 +344,9 @@ class ConfocalLogic(GenericLogic):
         self.signal_start_scanning.connect(self.start_scanner, QtCore.Qt.QueuedConnection)
         self.signal_continue_scanning.connect(self.continue_scanner, QtCore.Qt.QueuedConnection)
 
+        self._signal_save_xy.connect(self._save_xy_data, QtCore.Qt.QueuedConnection)
+        self._signal_save_depth.connect(self._save_depth_data, QtCore.Qt.QueuedConnection)
+
         self._change_position('activation')
 
     def on_deactivate(self):
@@ -366,9 +354,6 @@ class ConfocalLogic(GenericLogic):
 
         @return int: error code (0:OK, -1:error)
         """
-        self._statusVariables['clock_frequency'] = self._clock_frequency
-        self._statusVariables['return_slowness'] = self.return_slowness
-        self._statusVariables['max_history_length'] = self.max_history_length
         closing_state = ConfocalHistoryEntry(self)
         closing_state.snapshot(self)
         self.history.append(closing_state)
@@ -399,7 +384,7 @@ class ConfocalLogic(GenericLogic):
         """
         self._clock_frequency = int(clock_frequency)
         #checks if scanner is still running
-        if self.getState() == 'locked':
+        if self.module_state() == 'locked':
             return -1
         else:
             return 0
@@ -412,7 +397,7 @@ class ConfocalLogic(GenericLogic):
         @return int: error code (0:OK, -1:error)
         """
         # TODO: this is dirty, but it works for now
-#        while self.getState() == 'locked':
+#        while self.module_state() == 'locked':
 #            time.sleep(0.01)
         self._scan_counter = 0
         self._zscan = zscan
@@ -443,7 +428,7 @@ class ConfocalLogic(GenericLogic):
         @return int: error code (0:OK, -1:error)
         """
         with self.threadlock:
-            if self.getState() == 'locked':
+            if self.module_state() == 'locked':
                 self.stopRequested = True
         self.signal_stop_scanning.emit()
         return 0
@@ -468,9 +453,13 @@ class ConfocalLogic(GenericLogic):
             return -1
 
         if self._zscan:
-            # creates an array of evenly spaced numbers over the interval
-            # x1, x2 and the spacing is equal to xy_resolution
-            self._X = np.linspace(x1, x2, self.xy_resolution)
+            if self.depth_img_is_xz:
+                # creates an array of evenly spaced numbers over the interval
+                # x1, x2 and the spacing is equal to xy_resolution
+                self._X = np.linspace(x1, x2, self.xy_resolution)
+            else:
+                self._Y = np.linspace(y1, y2, self.xy_resolution)
+
             # Checks if the z-start and z-end value are ok
             if z2 < z1:
                 self.log.error(
@@ -580,20 +569,20 @@ class ConfocalLogic(GenericLogic):
 
         @return int: error code (0:OK, -1:error)
         """
-        self.lock()
+        self.module_state.lock()
 
-        self._scanning_device.lock()
+        self._scanning_device.module_state.lock()
         if self.initialize_image() < 0:
-            self._scanning_device.unlock()
-            self.unlock()
+            self._scanning_device.module_state.unlock()
+            self.module_state.unlock()
             return -1
 
         clock_status = self._scanning_device.set_up_scanner_clock(
             clock_frequency=self._clock_frequency)
 
         if clock_status < 0:
-            self._scanning_device.unlock()
-            self.unlock()
+            self._scanning_device.module_state.unlock()
+            self.module_state.unlock()
             self.set_position('scanner')
             return -1
 
@@ -601,8 +590,8 @@ class ConfocalLogic(GenericLogic):
 
         if scanner_status < 0:
             self._scanning_device.close_scanner_clock()
-            self._scanning_device.unlock()
-            self.unlock()
+            self._scanning_device.module_state.unlock()
+            self.module_state.unlock()
             self.set_position('scanner')
             return -1
 
@@ -614,15 +603,15 @@ class ConfocalLogic(GenericLogic):
 
         @return int: error code (0:OK, -1:error)
         """
-        self.lock()
-        self._scanning_device.lock()
+        self.module_state.lock()
+        self._scanning_device.module_state.lock()
 
         clock_status = self._scanning_device.set_up_scanner_clock(
             clock_frequency=self._clock_frequency)
 
         if clock_status < 0:
-            self._scanning_device.unlock()
-            self.unlock()
+            self._scanning_device.module_state.unlock()
+            self.module_state.unlock()
             self.set_position('scanner')
             return -1
 
@@ -630,8 +619,8 @@ class ConfocalLogic(GenericLogic):
 
         if scanner_status < 0:
             self._scanning_device.close_scanner_clock()
-            self._scanning_device.unlock()
-            self.unlock()
+            self._scanning_device.module_state.unlock()
+            self.module_state.unlock()
             self.set_position('scanner')
             return -1
 
@@ -652,7 +641,7 @@ class ConfocalLogic(GenericLogic):
         except Exception as e:
             self.log.exception('Could not close the scanner clock.')
         try:
-            self._scanning_device.unlock()
+            self._scanning_device.module_state.unlock()
         except Exception as e:
             self.log.exception('Could not unlock scanning device.')
 
@@ -681,7 +670,7 @@ class ConfocalLogic(GenericLogic):
             self._current_a = a
 
         # Checks if the scanner is still running
-        if self.getState() == 'locked' or self._scanning_device.getState() == 'locked':
+        if self.module_state() == 'locked' or self._scanning_device.module_state() == 'locked':
             return -1
         else:
             self._change_position(tag)
@@ -732,7 +721,7 @@ class ConfocalLogic(GenericLogic):
             with self.threadlock:
                 self.kill_scanner()
                 self.stopRequested = False
-                self.unlock()
+                self.module_state.unlock()
                 self.signal_xy_image_updated.emit()
                 self.signal_depth_image_updated.emit()
                 self.set_position('scanner')
@@ -863,7 +852,7 @@ class ConfocalLogic(GenericLogic):
             self.stop_scanning()
             self.signal_scan_lines_next.emit()
 
-    def save_xy_data(self, colorscale_range=None, percentile_range=None):
+    def save_xy_data(self, colorscale_range=None, percentile_range=None, block=True):
         """ Save the current confocal xy data to file.
 
         Two files are created.  The first is the imagedata, which has a text-matrix of count values
@@ -875,8 +864,20 @@ class ConfocalLogic(GenericLogic):
 
         @param: list colorscale_range (optional) The range [min, max] of the display colour scale (for the figure)
 
-        @param: list percentile_range (optional) The percentile range [min, max] of the color scale
+        @param: list percentile_range (optional) The percentile range [min, max] of the color scale 
+        
+        @param: bool block (optional) If False, return immediately; if True, block until save completes."""
+
+        if block:
+            self._save_xy_data(colorscale_range, percentile_range)
+        else:
+            self._signal_save_xy.emit(colorscale_range, percentile_range)
+
+    @QtCore.Slot(object, object)
+    def _save_xy_data(self, colorscale_range=None, percentile_range=None):
+        """ Execute save operation. Slot for _signal_save_xy.
         """
+        self.signal_save_started.emit()
         filepath = self._save_logic.get_path_for_module('Confocal')
         timestamp = datetime.datetime.now()
         # Prepare the metadata parameters (common to both saved files):
@@ -955,14 +956,30 @@ class ConfocalLogic(GenericLogic):
         self.signal_xy_data_saved.emit()
         return
 
-    def save_depth_data(self, colorscale_range=None, percentile_range=None):
+    def save_depth_data(self, colorscale_range=None, percentile_range=None, block=True):
         """ Save the current confocal depth data to file.
 
         Two files are created.  The first is the imagedata, which has a text-matrix of count values
         corresponding to the pixel matrix of the image.  Only count-values are saved here.
 
         The second file saves the full raw data with x, y, z, and counts at every pixel.
-        """
+
+        A figure is also saved.
+
+        @param: list colorscale_range (optional) The range [min, max] of the display colour scale (for the figure)
+
+        @param: list percentile_range (optional) The percentile range [min, max] of the color scale 
+        
+        @param: bool block (optional) If False, return immediately; if True, block until save completes."""
+        if block:
+            self._save_depth_data(colorscale_range, percentile_range)
+        else:
+            self._signal_save_depth.emit(colorscale_range, percentile_range)
+
+    @QtCore.Slot(object, object)
+    def _save_depth_data(self, colorscale_range=None, percentile_range=None):
+        """ Execute save operation. Slot for _signal_save_depth. """
+        self.signal_save_started.emit()
         filepath = self._save_logic.get_path_for_module('Confocal')
         timestamp = datetime.datetime.now()
         # Prepare the metadata parameters (common to both saved files):

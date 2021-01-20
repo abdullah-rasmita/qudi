@@ -24,67 +24,46 @@ import numpy as np
 import random
 import time
 
-from core.base import Base
+from core.module import Base
+from core.configoption import ConfigOption
 from interface.slow_counter_interface import SlowCounterInterface
 from interface.slow_counter_interface import SlowCounterConstraints
 from interface.slow_counter_interface import CountingMode
 
 
 class SlowCounterDummy(Base, SlowCounterInterface):
+    """ Dummy hardware class to emulate a slow counter with various distributions.
 
-    """This is the Interface class to define the controls for the simple
-    microwave hardware.
+    Example config for copy-paste:
+
+    slow_counter_dummy:
+        module.Class: 'slow_counter_dummy.SlowCounterDummy'
+        clock_frequency: 100 # in Hz
+        samples_number: 10
+        source_channels: 2
+        count_distribution: 'dark_bright_gaussian' # other options are:
+            # 'uniform, 'exponential', 'single_poisson', 'dark_bright_poisson'
+            #  and 'single_gaussian'.
+
     """
-    _modclass = 'SlowCounterDummy'
-    _modtype = 'hardware'
+
+    # config
+    _clock_frequency = ConfigOption('clock_frequency', 100, missing='warn')
+    _samples_number = ConfigOption('samples_number', 10, missing='warn')
+    source_channels = ConfigOption('source_channels', 2, missing='warn')
+    dist = ConfigOption('count_distribution', 'dark_bright_gaussian')
+
+    # 'No parameter "count_distribution" given in the configuration for the'
+    # 'Slow Counter Dummy. Possible distributions are "dark_bright_gaussian",'
+    # '"uniform", "exponential", "single_poisson", "dark_bright_poisson"'
+    # 'and "single_gaussian".'
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
 
-        self.log.info('The following configuration was found.')
-
-        # checking for the right configuration
-        for key in config.keys():
-            self.log.info('{0}: {1}'.format(key, config[key]))
-
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
-
-        config = self.getConfiguration()
-
-        if 'clock_frequency' in config.keys():
-            self._clock_frequency=config['clock_frequency']
-        else:
-            self._clock_frequency = 100
-            self.log.warning('No parameter "clock_frequency" configured in '
-                    'Slow Counter Dummy, taking the default value of {0} Hz '
-                    'instead.'.format(self._clock_frequency))
-
-        if 'samples_number' in config.keys():
-            self._samples_number = config['samples_number']
-        else:
-            self._samples_number = 10
-            self.log.warning('No parameter "samples_number" configured in '
-                    'Slow Counter Dummy, taking the default value of {0} '
-                    'instead.'.format(self._samples_number))
-
-        if 'source_channels' in config.keys():
-            self.source_channels = int(config['source_channels'])
-        else:
-            self.source_channels = 2
-
-        if 'count_distribution' in config.keys():
-            self.dist = config['count_distribution']
-        else:
-            self.dist = 'dark_bright_gaussian'
-            self.log.warning(
-                'No parameter "count_distribution" given in the configuration for the'
-                'Slow Counter Dummy. Possible distributions are "dark_bright_gaussian",'
-                '"uniform", "exponential", "single_poisson", "dark_bright_poisson"'
-                'and "single_gaussian". Taking the default distribution "{0}".'
-                ''.format(self.dist))
-
         # parameters
         if self.dist == 'dark_bright_poisson':
             self.mean_signal = 250

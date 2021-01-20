@@ -26,19 +26,29 @@ import numpy as np
 
 from logic.generic_logic import GenericLogic
 from interface.pid_controller_interface import PIDControllerInterface
+from core.connector import Connector
+from core.configoption import ConfigOption
+from core.statusvariable import StatusVar
 
 
 class SoftPIDController(GenericLogic, PIDControllerInterface):
     """
     Control a process via software PID.
     """
-    _modclass = 'pidlogic'
-    _modtype = 'logic'
-    ## declare connectors
-    _connectors = {
-        'process': 'ProcessInterface',
-        'control': 'ProcessControlInterface',
-        }
+
+    # declare connectors
+    process = Connector(interface='ProcessInterface')
+    control = Connector(interface='ProcessControlInterface')
+
+    # config opt
+    timestep = ConfigOption(default=100)
+
+    # status vars
+    kP = StatusVar(default=1)
+    kI = StatusVar(default=1)
+    kD = StatusVar(default=1)
+    setpoint = StatusVar(default=273.15)
+    manualvalue = StatusVar(default=0)
 
     sigNewValue = QtCore.Signal(float)
 
@@ -58,51 +68,18 @@ class SoftPIDController(GenericLogic, PIDControllerInterface):
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
-        self._process = self.get_connector('process')
-        self._control = self.get_connector('control')
+        self._process = self.process()
+        self._control = self.control()
 
         self.previousdelta = 0
-        self.cv = self._control.getControlValue()
-
-        config = self.getConfiguration()
-        if 'timestep' in config:
-            self.timestep = config['timestep']
-        else:
-            self.timestep = 100
-            self.log.warn('No time step configured, using 100ms')
-
-        # load parameters stored in app state store
-        if 'kP' in self._statusVariables:
-            self.kP = self._statusVariables['kP']
-        else:
-            self.kP = 1
-        if 'kI' in self._statusVariables:
-            self.kI = self._statusVariables['kI']
-        else:
-            self.kI = 1
-        if 'kD' in self._statusVariables:
-            self.kD = self._statusVariables['kD']
-        else:
-            self.kD = 1
-        if 'setpoint' in self._statusVariables:
-            self.setpoint = self._statusVariables['setpoint']
-        else:
-            self.setpoint = 273.15
-        #if 'enable' in self._statusVariables:
-        #    self.enable = self._statusVariables['enable']
-        #else:
-        #    self.enable = False
-        if 'manualvalue' in self._statusVariables:
-            self.manualvalue = self._statusVariables['manualvalue']
-        else:
-            self.manualvalue = 0
+        self.cv = self._control.get_control_value()
 
         self.timer = QtCore.QTimer()
         self.timer.setSingleShot(True)
         self.timer.setInterval(self.timestep)
 
         self.timer.timeout.connect(self._calcNextStep, QtCore.Qt.QueuedConnection)
-        self.sigNewValue.connect(self._control.setControlValue)
+        self.sigNewValue.connect(self._control.set_control_value)
 
         self.history = np.zeros([3, 5])
         self.savingState = False
@@ -115,13 +92,7 @@ class SoftPIDController(GenericLogic, PIDControllerInterface):
     def on_deactivate(self):
         """ Perform required deactivation.
         """
-
-        # save parameters stored in app state store
-        self._statusVariables['kP'] = self.kP
-        self._statusVariables['kI'] = self.kI
-        self._statusVariables['kD'] = self.kD
-        self._statusVariables['setpoint'] = self.setpoint
-        self._statusVariables['enable'] = self.enable
+        pass
 
     def _calcNextStep(self):
         """ This function implements the Takahashi Type C PID
@@ -130,7 +101,7 @@ class SoftPIDController(GenericLogic, PIDControllerInterface):
              The D term is NOT low-pass filtered.
              This function should be called once every TS seconds.
         """
-        self.pv = self._process.getProcessValue()
+        self.pv = self._process.get_process_value()
 
         if self.countdown > 0:
             self.countdown -= 1
@@ -141,7 +112,7 @@ class SoftPIDController(GenericLogic, PIDControllerInterface):
             self.integrated = 0
             self.enable = True
 
-        if (self.enable):
+        if self.enable:
             delta = self.setpoint - self.pv
             self.integrated += delta
             ## Calculate PID controller:
@@ -153,10 +124,10 @@ class SoftPIDController(GenericLogic, PIDControllerInterface):
             self.previousdelta = delta
 
             ## limit contol output to maximum permissible limits
-            limits = self._control.getControlLimits()
-            if (self.cv > limits[1]):
+            limits = self._control.get_control_limit()
+            if self.cv > limits[1]:
                 self.cv = limits[1]
-            if (self.cv < limits[0]):
+            if self.cv < limits[0]:
                 self.cv = limits[0]
 
             self.history = np.roll(self.history, -1, axis=1)
@@ -166,10 +137,10 @@ class SoftPIDController(GenericLogic, PIDControllerInterface):
             self.sigNewValue.emit(self.cv)
         else:
             self.cv = self.manualvalue
-            limits = self._control.getControlLimits()
-            if (self.cv > limits[1]):
+            limits = self._control.get_control_limit()
+            if self.cv > limits[1]:
                 self.cv = limits[1]
-            if (self.cv < limits[0]):
+            if self.cv < limits[0]:
                 self.cv = limits[0]
             self.sigNewValue.emit(self.cv)
 
@@ -274,10 +245,10 @@ class SoftPIDController(GenericLogic, PIDControllerInterface):
             @param float manualvalue: control value for manual mode of controller
         """
         self.manualvalue = manualvalue
-        limits = self._control.getControlLimits()
-        if (self.manualvalue > limits[1]):
+        limits = self._control.get_control_limit()
+        if self.manualvalue > limits[1]:
             self.manualvalue = limits[1]
-        if (self.manualvalue < limits[0]):
+        if self.manualvalue < limits[0]:
             self.manualvalue = limits[0]
 
     def get_enabled(self):
@@ -302,7 +273,7 @@ class SoftPIDController(GenericLogic, PIDControllerInterface):
 
             @return list(float): (minimum, maximum) values of the control actuator
         """
-        return self._control.getControlLimits()
+        return self._control.get_control_limit()
 
     def set_control_limits(self, limits):
         """ Set the minimum and maximum value of the control actuator.

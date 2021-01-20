@@ -35,23 +35,20 @@ Reimplement each call from the magnet interface and use only the motor interface
 command to talk to a xyz motor hardware and a rotational motor hardware.
 """
 
-
+from core.connector import Connector
 from logic.generic_logic import GenericLogic
 from interface.magnet_interface import MagnetInterface
 
 
 class MagnetMotorXYZROTInterfuse(GenericLogic, MagnetInterface):
-
-    _modclass = 'MagnetMotorXYZROTInterfuse'
-    _modtype = 'interfuse'
+    """
+    """
 
     # declare connectors, here you can see the interfuse action: the in
     # connector will cope a motor hardware, that means a motor device can
     # connect to the in connector of the logic.
-    _connectors = {
-        'motorstage_xyz': 'MotorInterface',
-        'motorstage_rot': 'MotorInterface'
-    }
+    motorstage_xyz = Connector(interface='MotorInterface')
+    motorstage_rot = Connector(interface='MotorInterface')
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -64,8 +61,8 @@ class MagnetMotorXYZROTInterfuse(GenericLogic, MagnetInterface):
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
-        self._motor_device_rot = self.get_connector('motorstage_rot')
-        self._motor_device_xyz = self.get_connector('motorstage_xyz')
+        self._motor_device_rot = self.motorstage_rot()
+        self._motor_device_xyz = self.motorstage_xyz()
 
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
@@ -164,14 +161,14 @@ class MagnetMotorXYZROTInterfuse(GenericLogic, MagnetInterface):
             pos_rot = self._motor_device_rot.get_pos()
         else:
             list_xyz, list_rot = self._split_list(param_list)
-            if list_xyz != []:
+            if list_xyz:
                 pos_xyz = self._motor_device_xyz.get_pos(list_xyz)
             else:
                 pos_xyz = {}
-            if list_rot != []:
+            if list_rot:
                 pos_rot = self._motor_device_rot.get_pos(list_rot)
             else:
-                pos_rot={}
+                pos_rot = {}
         pos_xyz.update(pos_rot)
         return pos_xyz
 
@@ -193,11 +190,11 @@ class MagnetMotorXYZROTInterfuse(GenericLogic, MagnetInterface):
             #self.log.debug(status_rot)
         else:
             list_xyz, list_rot = self._split_list(param_list)
-            if list_xyz != []:
+            if list_xyz:
                 status_xyz = self._motor_device_xyz.get_status(list_xyz)
             else:
                 status_xyz = {}
-            if list_rot != []:
+            if list_rot:
                 status_rot = self._motor_device_rot.get_status(list_rot)
             else:
                 status_rot = {}
@@ -226,11 +223,11 @@ class MagnetMotorXYZROTInterfuse(GenericLogic, MagnetInterface):
                 pos_rot = self._motor_device_rot.calibrate()
             else:
                 list_xyz, list_rot = self._split_list(param_list)
-                if list_xyz != []:
+                if list_xyz:
                     pos_xyz = self._motor_device_xyz.calibrate(list_xyz)
                 else:
                     pos_xyz = {}
-                if list_rot != []:
+                if list_rot:
                     pos_rot = self._motor_device_rot.calibrate(list_rot)
                 else:
                     pos_rot = {}
@@ -260,11 +257,11 @@ class MagnetMotorXYZROTInterfuse(GenericLogic, MagnetInterface):
             vel_rot = self._motor_device_rot.get_velocity()
         else:
             list_xyz, list_rot = self._split_list(param_list)
-            if list_xyz != []:
+            if list_xyz:
                 vel_xyz = self._motor_device_xyz.get_velocity(list_xyz)
             else:
                 vel_xyz = {}
-            if list_rot != []:
+            if list_rot:
                 vel_rot = self._motor_device_rot.get_velocity(list_rot)
             else:
                 vel_rot = {}

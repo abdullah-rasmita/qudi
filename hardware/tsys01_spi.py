@@ -20,7 +20,8 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-from core.base import Base
+from core.module import Base
+from core.configoption import ConfigOption
 from interface.process_interface import ProcessInterface
 from core.util.mutex import Mutex
 
@@ -31,9 +32,18 @@ import time
 
 class TSYS01SPI(Base, ProcessInterface):
     """ Measurement Systems TSYS01 temperature sensor.
+
+    Example config for copy-paste:
+
+    temp_tsys:
+        module.Class: 'tsys01_spi.TSYS01SPI'
+        bus: 0
+        device: 0
+
     """
-    _modclass = 'TSYS01'
-    _modtype = 'hardware'
+    # config opts
+    bus = ConfigOption('bus', default=0, missing='warn')
+    device = ConfigOption('device', default=0, missing='warn')
 
     # commands to chip (constants)
     READ_ADC  = 0x00
@@ -50,10 +60,6 @@ class TSYS01SPI(Base, ProcessInterface):
     def on_activate(self):
         """ Activate module.
         """
-        config = self.getConfiguration()
-        print(config)
-        self.bus = config['bus']
-        self.device = config['device']
         self.rom = []
         self.spi = spidev.SpiDev()
         self.spi.open(self.bus, self.device)
@@ -90,8 +96,8 @@ class TSYS01SPI(Base, ProcessInterface):
             @param int addr: momory address to read
             @return int: 16bit contents of rom at address
         """
-        bytes = self.READ_ROM0 | 0x0F & ( addr << 1)
-        rbuf = self.spi.xfer( [bytes, 0x00, 0x00] )
+        bytes_to_read = self.READ_ROM0 | 0x0F & ( addr << 1)
+        rbuf = self.spi.xfer( [bytes_to_read, 0x00, 0x00] )
         return 2**8*rbuf[1] + rbuf[2]
 
     def readROM(self):
@@ -134,7 +140,7 @@ class TSYS01SPI(Base, ProcessInterface):
               +  4.0 * self.rom[2] * 10**-16 * adc16**3
               + -2.0 * self.rom[3] * 10**-11 * adc16**2
               +  1.0 * self.rom[4] * 10**-6  * adc16
-              + -1.5 * self.rom[5] * 10**-2 );
+              + -1.5 * self.rom[5] * 10**-2 )
 
     def temperatureKelvin(self, adcValue):
         """ Convert ADC value to Kelvin.
@@ -145,7 +151,7 @@ class TSYS01SPI(Base, ProcessInterface):
         """
         return 273.15 + self.temperatureCelsius(adcValue)
 
-    def getProcessValue(self):
+    def get_process_value(self):
         """ Read ADC and return emperature in Kelvin.
 
             @return float: current temperature in Kelvin
@@ -154,9 +160,9 @@ class TSYS01SPI(Base, ProcessInterface):
             self.startADC()
             return self.temperatureKelvin(self.readADC())
 
-    def getProcessUnit(self):
+    def get_process_unit(self):
         """ Return Process unit, here Kelvin.
 
             @return tuple(str, str): short and text form of process unit
         """
-        return ('K', 'kelvin')
+        return 'K', 'kelvin'

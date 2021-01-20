@@ -83,13 +83,12 @@ class TaskListTableModel(ListTableModel):
                         )
                 )
 
+
 class TaskRunner(GenericLogic):
     """ This module keeps a collection of tasks that have varying preconditions,
         postconditions and conflicts and executes these tasks as their given
         conditions allow.
     """
-    _modclass = 'TaskRunner'
-    _modtype = 'Logic'
 
     sigLoadTasks = QtCore.Signal()
     sigCheckTasks = QtCore.Signal()
@@ -117,13 +116,10 @@ class TaskRunner(GenericLogic):
         config = self.getConfiguration()
         if not 'tasks' in config:
             return
-        if (config['tasks'] is None):
+        if config['tasks'] is None:
             return
         for task in config['tasks']:
-            t = {}
-            t['ok'] = False
-            t['object'] = None
-            t['name'] = task
+            t = {'ok': False, 'object': None, 'name': task}
             # print('tsk:', task)
             if not 'module' in config['tasks'][task]:
                 self.log.error('No module given for task {0}'.format(task))
@@ -250,7 +246,8 @@ class TaskRunner(GenericLogic):
             for moddef, mod in task['needsmodules'].items():
                 if mod in self._manager.tree['defined']['logic'] and not mod in self._manager.tree['loaded']['logic']:
                     self._manager.startModule('logic', mod)
-                if mod in self._manager.tree['loaded']['logic'] and not self._manager.tree['loaded']['logic'][mod].isstate('deactivated'):
+                if (mod in self._manager.tree['loaded']['logic']
+                        and not self._manager.tree['loaded']['logic'][mod].module_state.isstate('deactivated')):
                     modok = True
             # print(task['name'], ppok, pok, modok)
             task['ok'] = ppok and pok and modok

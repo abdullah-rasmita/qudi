@@ -24,46 +24,37 @@ import TimeTagger as tt
 import time
 import numpy as np
 
-from core.base import Base
+from core.module import Base
+from core.configoption import ConfigOption
 from interface.slow_counter_interface import SlowCounterInterface
 from interface.slow_counter_interface import SlowCounterConstraints
 from interface.slow_counter_interface import CountingMode
 
+
 class TimeTaggerCounter(Base, SlowCounterInterface):
+    """ Using the TimeTagger as a slow counter.
 
-    """ Using the TimeTagger as a counter."""
+    Example config for copy-paste:
 
-    _modtype = 'TTCounter'
-    _modclass = 'hardware'
+    timetagger_slowcounter:
+        module.Class: 'timetagger_counter.TimeTaggerCounter'
+        timetagger_channel_apd_0: 0
+        timetagger_channel_apd_1: 1
+        timetagger_sum_channels: 2
 
+    """
+
+    _channel_apd_0 = ConfigOption('timetagger_channel_apd_0', missing='error')
+    _channel_apd_1 = ConfigOption('timetagger_channel_apd_1', None, missing='warn')
+    _sum_channels = ConfigOption('timetagger_sum_channels', False)
 
     def on_activate(self):
         """ Start up TimeTagger interface
         """
-
         self._tagger = tt.createTimeTagger()
-
         self._count_frequency = 50  # Hz
 
-        config = self.getConfiguration()
-
-        if 'timetagger_channel_apd_0' in config.keys():
-            self._channel_apd_0 = config['timetagger_channel_apd_0']
-        else:
-            self.log.error('No parameter "timetagger_channel_apd_0" configured.\n')
-
-        if 'timetagger_channel_apd_1' in config.keys():
-            self._channel_apd_1 = config['timetagger_channel_apd_1']
-        else:
-            self._channel_apd_1 = None
-
-        if 'timetagger_sum_channels' in config.keys():
-            self._sum_channels = config['timetagger_sum_channels']
-        else:
-            self.log.warning('No indication whether or not to sum apd channels for timetagger. Assuming false.')
-            self._sum_channels = False
-
-        if self._sum_channels and ('timetagger_channel_apd_1' in config.keys()):
+        if self._sum_channels and self._channel_apd_1 is None:
             self.log.error('Cannot sum channels when only one apd channel given')
 
         ## self._mode can take 3 values:

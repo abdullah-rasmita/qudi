@@ -20,6 +20,8 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 """
 
 import os
+
+from core.connector import Connector
 from gui.guibase import GUIBase
 from qtpy import QtCore
 from qtpy import QtWidgets
@@ -28,10 +30,9 @@ from qtpy import uic
 
 class AutomationGui(GUIBase):
     """ Graphical interface for arranging tasks without using Python code. """
-    _modclass = 'AutomationGui'
-    _modtype = 'gui'
-    ## declare connectors
-    _connectors = {'automationlogic': 'AutomationLogic'}
+
+    # declare connectors
+    automationlogic = Connector(interface='AutomationLogic')
 
     sigRunTaskFromList = QtCore.Signal(object)
     sigPauseTaskFromList = QtCore.Signal(object)
@@ -42,7 +43,7 @@ class AutomationGui(GUIBase):
         """
         self._mw = AutomationMainWindow()
         self.restoreWindowPos(self._mw)
-        self.logic = self.get_connector('automationlogic')
+        self.logic = self.automationlogic()
         self._mw.autoTreeView.setModel(self.logic.model)
         #self._mw.taskTableView.clicked.connect(self.setRunToolState)
         #self._mw.actionStart_Task.triggered.connect(self.manualStart)

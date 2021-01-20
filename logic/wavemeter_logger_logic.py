@@ -29,6 +29,8 @@ import datetime
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
+from core.connector import Connector
+from core.configoption import ConfigOption
 from logic.generic_logic import GenericLogic
 from core.util.mutex import Mutex
 
@@ -82,7 +84,7 @@ class HardwarePull(QtCore.QObject):
 
         if (
             (not self._parentclass._counter_logic.get_saving_state()) or
-            self._parentclass._counter_logic.getState() == 'idle'
+            self._parentclass._counter_logic.module_state() == 'idle'
         ):
 
             self._parentclass.stop_scanning()
@@ -99,16 +101,15 @@ class WavemeterLoggerLogic(GenericLogic):
     sig_new_data_point = QtCore.Signal(list)
     sig_fit_updated = QtCore.Signal()
 
-    _modclass = 'laserscanninglogic'
-    _modtype = 'logic'
-
     # declare connectors
-    _connectors = {
-        'wavemeter1': 'WavemeterInterface',
-        'counterlogic': 'CounterLogic',
-        'savelogic': 'SaveLogic',
-        'fitlogic': 'FitLogic'
-    }
+    wavemeter1 = Connector(interface='WavemeterInterface')
+    counterlogic = Connector(interface='CounterLogic')
+    savelogic = Connector(interface='SaveLogic')
+    fitlogic = Connector(interface='FitLogic')
+
+    # config opts
+    _logic_acquisition_timing = ConfigOption('logic_acquisition_timing', 20.0, missing='warn')
+    _logic_update_timing = ConfigOption('logic_update_timing', 100.0, missing='warn')
 
     def __init__(self, config, **kwargs):
         """ Create WavemeterLoggerLogic object with connectors.
@@ -120,22 +121,6 @@ class WavemeterLoggerLogic(GenericLogic):
 
         # locking for thread safety
         self.threadlock = Mutex()
-
-        if 'logic_acquisition_timing' in config.keys():
-            self._logic_acquisition_timing = config['logic_acquisition_timing']
-        else:
-            self._logic_acquisition_timing = 20.
-            self.log.warning('No logic_acquisition_timing configured, '
-                             'using {} instead.'.format(self._logic_acquisition_timing)
-                             )
-
-        if 'logic_update_timing' in config.keys():
-            self._logic_update_timing = config['logic_update_timing']
-        else:
-            self._logic_update_timing = 100.
-            self.log.warning('No logic_update_timing configured, '
-                             'using {} instead.'.format(self._logic_update_timing)
-                             )
 
         self._acqusition_start_time = 0
         self._bins = 200
@@ -158,13 +143,13 @@ class WavemeterLoggerLogic(GenericLogic):
 
         self.stopRequested = False
 
-        self._wavemeter_device = self.get_connector('wavemeter1')
+        self._wavemeter_device = self.wavemeter1()
 #        print("Counting device is", self._counting_device)
 
-        self._save_logic = self.get_connector('savelogic')
-        self._counter_logic = self.get_connector('counterlogic')
+        self._save_logic = self.savelogic()
+        self._counter_logic = self.counterlogic()
 
-        self._fit_logic = self.get_connector('fitlogic')
+        self._fit_logic = self.fitlogic()
         self.fc = self._fit_logic.make_fit_container('Wavemeter counts', '1d')
         self.fc.set_units(['Hz', 'c/s'])
 
@@ -223,7 +208,7 @@ class WavemeterLoggerLogic(GenericLogic):
     def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
         """
-        if self.getState() != 'idle' and self.getState() != 'deactivated':
+        if self.module_state() != 'idle' and self.module_state() != 'deactivated':
             self.stop_scanning()
         self.hardware_thread.quit()
         self.sig_handle_timer.disconnect()
@@ -297,9 +282,9 @@ class WavemeterLoggerLogic(GenericLogic):
             @param bool resume: whether to resume measurement
         """
 
-        self.run()
+        self.module_state.run()
 
-        if self._counter_logic.getState() == 'idle':
+        if self._counter_logic.module_state() == 'idle':
             self._counter_logic.startCount()
 
         if self._counter_logic.get_saving_state():
@@ -336,12 +321,12 @@ class WavemeterLoggerLogic(GenericLogic):
         """ Set a flag to request stopping counting.
         """
 
-        if not self.getState() == 'idle':
+        if not self.module_state() == 'idle':
             # self._wavemeter_device.stop_acqusition()
             # stop the measurement thread
             self.sig_handle_timer.emit(False)
             # set status to idle again
-            self.stop()
+            self.module_state.stop()
 
         if self._counter_logic.get_saving_state():
             self._counter_logic.save_data(to_file=False)
@@ -408,7 +393,7 @@ class WavemeterLoggerLogic(GenericLogic):
         # Wait and repeat if measurement is ongoing
         time.sleep(self._logic_update_timing * 1e-3)
 
-        if self.getState() == 'running':
+        if self.module_state() == 'running':
             self.sig_update_histogram_next.emit(False)
 
     def _update_histogram(self, complete_histogram):
@@ -521,7 +506,7 @@ class WavemeterLoggerLogic(GenericLogic):
                                    parameters=parameters,
                                    filelabel=filelabel,
                                    timestamp=timestamp,
-                                   fmt='%.6e')
+                                   fmt='%.12e')
 
         filelabel = 'wavemeter_log_wavelength'
 
@@ -543,7 +528,7 @@ class WavemeterLoggerLogic(GenericLogic):
                                    parameters=parameters,
                                    filelabel=filelabel,
                                    timestamp=timestamp,
-                                   fmt='%.6e')
+                                   fmt='%.12e')
 
         filelabel = 'wavemeter_log_counts'
 
@@ -565,7 +550,7 @@ class WavemeterLoggerLogic(GenericLogic):
                                    parameters=parameters,
                                    filelabel=filelabel,
                                    timestamp=timestamp,
-                                   fmt='%.6e')
+                                   fmt='%.12e')
 
         self.log.debug('Laser Scan saved to:\n{0}'.format(filepath))
 
@@ -591,7 +576,7 @@ class WavemeterLoggerLogic(GenericLogic):
                                    filelabel=filelabel,
                                    timestamp=timestamp,
                                    plotfig=fig,
-                                   fmt='%.6e')
+                                   fmt='%.12e')
         plt.close(fig)
         return 0
 

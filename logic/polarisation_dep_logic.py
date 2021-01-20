@@ -19,6 +19,7 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
+from core.connector import Connector
 from logic.generic_logic import GenericLogic
 from qtpy import QtCore
 
@@ -28,15 +29,10 @@ class PolarisationDepLogic(GenericLogic):
 
     """
 
-    _modclass = 'polarisationdeplogic'
-    _modtype = 'logic'
-
-    ## declare connectors
-    _connectors = {
-        'counterlogic': 'CounterLogic',
-        'savelogic': 'SaveLogic',
-        'motor':'MotorInterface'
-    }
+    # declare connectors
+    counterlogic = Connector(interface='CounterLogic')
+    savelogic = Connector(interface='SaveLogic')
+    motor = Connector(interface='MotorInterface')
 
     signal_rotation_finished = QtCore.Signal()
     signal_start_rotation = QtCore.Signal()
@@ -45,12 +41,12 @@ class PolarisationDepLogic(GenericLogic):
         """ Initialisation performed during activation of the module.
         """
 
-        self._counter_logic = self.get_connector('counterlogic')
+        self._counter_logic = self.counterlogic()
 #        print("Counting device is", self._counting_device)
 
-        self._save_logic = self.get_connector('savelogic')
+        self._save_logic = self.savelogic()
 
-        self._hwpmotor = self.get_connector('motor')
+        self._hwpmotor = self.motor()
 
         # Initialise measurement parameters
         self.scan_length = 360

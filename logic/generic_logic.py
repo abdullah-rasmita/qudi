@@ -19,15 +19,14 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 from qtpy import QtCore
-from core.base import Base
+from core.module import Base
 from core.util.mutex import Mutex
 
 
 class GenericLogic(Base):
     """A generic logic interface class.
     """
-    _modclass = 'GenericLogic'
-    _modtype = 'logic'
+    _threaded = True
 
     def __init__(self, **kwargs):
         """ Initialzize a logic module.

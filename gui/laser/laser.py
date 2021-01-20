@@ -20,16 +20,18 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
+import numpy as np
+import os
+import pyqtgraph as pg
+import time
+
+from core.connector import Connector
+from gui.colordefs import QudiPalettePale as palette
 from gui.guibase import GUIBase
 from interface.simple_laser_interface import ControlMode, ShutterState, LaserState
-from gui.colordefs import QudiPalettePale as palette
 from qtpy import QtCore
 from qtpy import QtWidgets
 from qtpy import uic
-import numpy as np
-import pyqtgraph as pg
-import time
-import os
 
 
 class TimeAxisItem(pg.AxisItem):
@@ -63,11 +65,9 @@ class LaserWindow(QtWidgets.QMainWindow):
 class LaserGUI(GUIBase):
     """ FIXME: Please document
     """
-    _modclass = 'lasergui'
-    _modtype = 'gui'
 
     ## declare connectors
-    _connectors = {'laserlogic': 'LaserLogic'}
+    laserlogic = Connector(interface='LaserLogic')
 
     sigLaser = QtCore.Signal(bool)
     sigShutter = QtCore.Signal(bool)
@@ -81,7 +81,7 @@ class LaserGUI(GUIBase):
     def on_activate(self):
         """ Definition and initialisation of the GUI plus staring the measurement.
         """
-        self._laser_logic = self.get_connector('laserlogic')
+        self._laser_logic = self.laserlogic()
 
         #####################
         # Configuring the dock widgets
@@ -241,7 +241,7 @@ class LaserGUI(GUIBase):
         elif self._laser_logic.laser_shutter == ShutterState.NOSHUTTER:
             self._mw.shutterButton.setText('No shutter.')
         else:
-            self._mw.laserButton.setText('Shutter: ?')
+            self._mw.shutterButton.setText('Shutter: ?')
 
         self._mw.currentRadioButton.setEnabled(self._laser_logic.laser_can_current)
         self._mw.powerRadioButton.setEnabled(self._laser_logic.laser_can_power)

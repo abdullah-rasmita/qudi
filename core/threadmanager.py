@@ -112,7 +112,7 @@ class ThreadManager(QtCore.QAbstractTableModel):
             raise IndexError
         it = iter(self._threads)
         key = next(it)
-        while(i<n):
+        while i<n:
             key = next(it)
             i += 1
         return key, self._threads[key]
@@ -127,7 +127,7 @@ class ThreadManager(QtCore.QAbstractTableModel):
         i = 0
         it = iter(self._threads)
         newkey = next(it)
-        while(key != newkey):
+        while key != newkey:
             newkey = next(it)
             i += 1
         return i
@@ -192,7 +192,7 @@ class ThreadManager(QtCore.QAbstractTableModel):
         elif orientation != QtCore.Qt.Horizontal:
             return None
         else:
-            return self.header[section]
+            return self.headers[section]
 
 class ThreadItem(QtCore.QObject):
     """ This class represents a QThread.

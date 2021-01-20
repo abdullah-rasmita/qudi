@@ -19,18 +19,19 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
+import math
 import numpy as np
 try:
     import pyqtgraph.functions as fn
-except:
+except ImportError:
     fn = None
-import math
 
 
 def get_unit_prefix_dict():
-    """ Return the dictionary, which assigns the prefix of a unit to its
-        proper order of magnitude.
-    @return dict: keys are string prefix and items are magnitude values.
+    """
+    Return the dictionary, which assigns the prefix of a unit to its proper order of magnitude.
+
+    @return dict: keys are string prefix and values are magnitude values.
     """
 
     unit_prefix_dict = {
@@ -40,7 +41,7 @@ def get_unit_prefix_dict():
         'f': 1e-15,
         'p': 1e-12,
         'n': 1e-9,
-        'micro': 1e-6,
+        'µ': 1e-6,
         'm': 1e-3,
         '': 1,
         'k': 1e3,
@@ -61,35 +62,47 @@ class ScaledFloat(float):
 
     Examples
     --------
-    >>> '{:.0r}A'.format(ScaledFloat(50))
-    50 A
-    >>> '{:.1r}A'.format(ScaledFloat(1.5e3))
-    1.5 kA
-    >>> '{:.1r}A'.format(ScaledFloat(2e-3))
-    2.0 mA
-    >>> '{:rg}A'.format(ScaledFloat(2e-3))
-    2 mA
-    >>> '{:rf}A'.format(ScaledFloat(2e-3))
-    2.000000 mA
+    '{:.0r}A'.format(ScaledFloat(50))       --> 50 A
+    '{:.1r}A'.format(ScaledFloat(1.5e3))    --> 1.5 kA
+    '{:.1r}A'.format(ScaledFloat(2e-3))     --> 2.0 mA
+    '{:rg}A'.format(ScaledFloat(2e-3))      --> 2 mA
+    '{:rf}A'.format(ScaledFloat(2e-3))      --> 2.000000 mA
     """
 
     @property
     def scale(self):
         """
-        Returns the scale.
+        Returns the scale. (No prefix if 0)
 
         Examples
         --------
         1e-3: m
         1e6: M
         """
+
+        # Zero makes the log crash and should not have a prefix
+        if self == 0:
+            return ''
+
         exponent = math.floor(math.log10(abs(self)) / 3)
         if exponent < -8:
             exponent = -8
         if exponent > 8:
             exponent = 8
-        prefix = 'yzafpnum kMGTPEZY'
+        prefix = 'yzafpnµm kMGTPEZY'
         return prefix[8 + exponent].strip()
+
+    @property
+    def scale_val(self):
+        """ Returns the scale value which can be used to devide the actual value
+
+        Examples
+        --------
+        m: 1e-3
+        M: 1e6
+        """
+        scale_str = self.scale
+        return get_unit_prefix_dict()[scale_str]
 
     def __format__(self, fmt):
         """
@@ -102,7 +115,7 @@ class ScaledFloat(float):
         fmt : str format string
         """
         autoscale = False
-        if (len(fmt) >= 2):
+        if len(fmt) >= 2:
             if fmt[-2] == 'r':
                 autoscale = True
                 fmt = fmt[:-2] + fmt[-1]
@@ -112,9 +125,9 @@ class ScaledFloat(float):
         elif fmt[-1] == 'r':
             autoscale = True
             fmt = fmt[:-1] + 'f'
-        if (autoscale):
+        if autoscale:
             scale = self.scale
-            if (scale == 'u'):
+            if scale == 'u':
                 index = 'micro'
             else:
                 index = scale
@@ -160,7 +173,7 @@ def create_formatted_output(param_dict, num_sig_digits=5):
 
 
     """
-    if (fn is None):
+    if fn is None:
         raise Exception('This function requires pyqtgraph.')
 
     output_str = ''
@@ -193,22 +206,17 @@ def create_formatted_output(param_dict, num_sig_digits=5):
                 # range, rather then from the value 1000 to 1, which is
                 # default.
                 sc_fact, unit_prefix = fn.siScale(error * 10)
-
-            output_str += '{0}: {1} \u00B1 {2} {3}{4} \n'.format(entry,
-                                                                 round(
-                                                                     value * sc_fact, num_sig_digits - 1),
-                                                                 round(
-                                                                     error * sc_fact, num_sig_digits - 1),
+            output_str += '{0}: {1} \u00B1 {2} {3}{4} \n'.format(entry, round(value * sc_fact,
+                                                                              num_sig_digits - 1),
+                                                                 round(error * sc_fact,
+                                                                       num_sig_digits - 1),
                                                                  unit_prefix,
-                                                                 param_dict[entry][
-                                                                     'unit'],
-                                                                 )
-
+                                                                 param_dict[entry]['unit'])
         else:
             output_str += '{0}: '.format(entry) + fn.siFormat(param_dict[entry]['value'],
                                                               precision=num_sig_digits,
-                                                              suffix=param_dict[entry]['unit']) + '\n'
-
+                                                              suffix=param_dict[entry][
+                                                                  'unit']) + '\n'
     return output_str
 
 
@@ -274,7 +282,7 @@ def round_value_to_error(value, error):
 
     # check if error is zero, since that is an invalid input!
     if np.isclose(error, 0.0, atol=atol) or np.isnan(error) or np.isinf(error):
-        #self.log.error('Cannot round to the error, since either a zero error ')
+        # self.log.error('Cannot round to the error, since either a zero error ')
         # logger.warning('Cannot round to the error, since either a zero error '
         #            'value was passed for the number {0}, or the error is '
         #            'NaN: Error value: {1}. '.format(value, error))
@@ -310,7 +318,7 @@ def get_relevant_digit(entry):
     """ By using log10, abs and int operations, the proper relevant digit is
         obtained.
 
-    @param flaot entry:
+    @param float entry:
 
     @return: int, the leading relevant exponent
     """
@@ -318,11 +326,16 @@ def get_relevant_digit(entry):
     # the log10 can only be calculated of a positive number.
     entry = np.abs(entry)
 
+    # the log of zero crashes, so return 0
+    if entry == 0:
+        return 0
+
     if np.log10(entry) >= 0:
         return int(np.log10(entry))
     else:
         # catch the asymmetric behaviour of the log and int operation.
-        return int(int(np.abs(np.log10(entry))) + 1 + np.log10(entry)) - (int(np.abs(np.log10(entry))) + 1)
+        return int(int(np.abs(np.log10(entry))) + 1 + np.log10(entry)) - (
+                    int(np.abs(np.log10(entry))) + 1)
 
 
 def get_si_norm(entry):
@@ -338,114 +351,6 @@ def get_si_norm(entry):
     val = get_relevant_digit(entry)
     fact = int(val / 3)
     power = int(3 * fact)
-    norm = 10**(power)
+    norm = 10 ** power
 
     return entry / norm, norm
-
-
-def is_number(test_value):
-    """ Check whether passed value is a number
-
-    @return: bool, True if the passed value is a number, otherwise false.
-    """
-    return is_integer(test_value) or is_float(test_value) or is_complex(test_value)
-
-
-def is_integer(test_value):
-    """ Check all available integer representations.
-
-    @return: bool, True if the passed value is a integer, otherwise false.
-    """
-
-    return type(test_value) in [np.int, np.int8, np.int16, np.int32, np.int64,
-                                np.uint, np.uint8, np.uint16, np.uint32,
-                                np.uint64]
-
-
-def is_float(test_value):
-    """ Check all available float representations.
-
-    @return: bool, True if the passed value is a float, otherwise false.
-    """
-    return type(test_value) in [np.float, np.float16, np.float32, np.float64]
-
-
-def is_complex(test_value):
-    """ Check all available complex representations.
-
-    @return: bool, True if the passed value is a complex value, otherwise false.
-    """
-
-    return type(test_value) in [np.complex, np.complex64, np.complex128]
-
-
-def in_range(value, lower_limit, upper_limit):
-    """ Check if a value is in a given range an return closest possible value in range.
-    Also check the range.
-
-    @param value: value to be checked
-    @param lower_limit: lowest allowed value
-    @param upper_limit: highest allowed value
-    @return: value closest to value in range
-    """
-    if upper_limit > lower_limit:
-        u_limit = upper_limit
-        l_limit = lower_limit
-    else:
-        l_limit = upper_limit
-        u_limit = lower_limit
-
-    if value > u_limit:
-        return upper_limit
-    if value < l_limit:
-        return lower_limit
-    return value
-
-
-def compute_dft(x_val, y_val, zeropad_num=0):
-    """ Compute the Discrete fourier Transform
-
-    @param numpy.array x_val: 1D array
-    @param numpy.array y_val: 1D array of same size as x_val
-    @param int zeropad_num: zeropadding (adding zeros to the end of the array).
-                            zeropad_num >= 0, the size of the array, which is
-                            add to the end of the y_val before performing the
-                            dft. The resulting array will have the length
-                                (len(y_val)/2)*(zeropad_num+1)
-                            Note that zeropadding will not change or add more
-                            information to the dft, it will solely interpolate
-                            between the dft_y values.
-
-    @return: tuple(dft_x, dft_y):
-                be aware that the return arrays' length depend on the zeropad
-                number like
-                    len(dft_x) = len(dft_y) = (len(y_val)/2)*(zeropad_num+1)
-
-
-    """
-
-    x_val = np.array(x_val)
-    y_val = np.array(y_val)
-
-    corrected_y = y_val - y_val.mean()
-    # The absolute values contain the fourier transformed y values
-
-    zeropad_arr = np.zeros(len(corrected_y)*(zeropad_num+1))
-    zeropad_arr[:len(corrected_y)] = corrected_y
-    fft_y = np.abs(np.fft.fft(zeropad_arr))
-
-    # Due to the sampling theorem you can only identify frequencies at half
-    # of the sample rate, therefore the FT contains an almost symmetric
-    # spectrum (the asymmetry results from aliasing effects). Therefore take
-    # the half of the values for the display.
-    middle = int((len(zeropad_arr)+1)//2)
-
-    # sample spacing of x_axis, if x is a time axis than it corresponds to a
-    # timestep:
-    x_spacing = np.round(x_val[-1] - x_val[-2], 12)
-
-    # use the helper function of numpy to calculate the x_values for the
-    # fourier space. That function will handle an occuring devision by 0:
-    fft_x = np.fft.fftfreq(len(zeropad_arr), d=x_spacing)
-
-    return abs(fft_x[:middle]), fft_y[:middle]

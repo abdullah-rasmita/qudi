@@ -24,134 +24,74 @@ import time
 import serial
 from collections import OrderedDict
 
-from core.base import Base
+from core.module import Base
+from core.configoption import ConfigOption
 from interface.motor_interface import MotorInterface
+
 
 class MotorRotationZaber(Base, MotorInterface):
     """unstable: Christoph Müller, Simon Schmitt
     This is the Interface class to define the controls for the simple
     microwave hardware.
+
+    Example config for copy-paste:
+
+    motorstage_zaber:
+        module.Class: 'motor.zaber_motor_rotation_stage.MotorRotationZaber'
+        com_port_zaber: 'ASRL1::INSTR'
+        zaber_baud_rate: 9600
+        zaber_timeout: 1000
+        zaber_term_char: '\n'
+
+        zaber_axis_label: 'phi'
+        zaber_angle_min: -1e5 # in degrees
+        zaber_angle_max: 1e5 # in degrees
+        zaber_angle_step: 1e-5 # in degrees
+
+        zaber_velocity_min: 1e-3 # in degrees/s
+        zaber_velocity_max: 10 # in degrees/s
+        zaber_velocity_step: -1e-3 # in degrees/s
+
+        zaber_micro_step_size: 234.375e-6
+        zaber_speed_conversion: 9.375
+
     """
-    _modclass = 'MotorRotation'
-    _modtype = 'hardware'
+
+    _com_port_rot = ConfigOption('com_port_zaber', 'ASRL1::INSTR', missing='warn')
+    _rot_baud_rate = ConfigOption('zaber_baud_rate', 9600, missing='warn')
+    _rot_timeout = ConfigOption('zaber_timeout', 5000, missing='warn')     #TIMEOUT shorter?
+    _rot_term_char = ConfigOption('zaber_term_char', '\n', missing='warn')
+
+    _axis_label = ConfigOption('zaber_axis_label', 'phi', missing='warn')
+    _min_angle = ConfigOption('zaber_angle_min', -1e5, missing='warn')
+    _max_angle = ConfigOption('zaber_angle_max', 1e5, missing='warn')
+    _min_step = ConfigOption('zaber_angle_step', 1e-5, missing='warn')
+
+    _min_vel = ConfigOption('zaber_velocity_min', 1e-3, missing='warn')
+    _max_vel = ConfigOption('zaber_velocity_max', 10, missing='warn')
+    _step_vel = ConfigOption('zaber_velocity_step', 1e-3, missing='warn')
+
+    _micro_step_size = ConfigOption('zaber_micro_step_size', 234.375e-6, missing='warn')
+    velocity_conversion = ConfigOption('zaber_speed_conversion', 9.375, missing='warn')
+
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
 
-
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
-        # Read configs from config-file
-        config = self.getConfiguration()
 
-        # get the right com-ports from config
-        if 'com_port_zaber' in config.keys():
-            self._com_port_rot = config['com_port_zaber']
-        else:
-            self.log.error('No parameter "com_port_rot" found in config.\n'
-                    'Cannot connect to motorized stage!')
+        self._serial_connection_rot = serial.Serial(
+            port=self._com_port_rot,
+            baudrate=self._rot_baud_rate,
+            bytesize=8,
+            parity='N',
+            stopbits=1,
+            timeout=self._rot_timeout)
 
-        if 'zaber_baud_rate' in config.keys():
-            self._rot_baud_rate = config['zaber_baud_rate']
-        else:
-            self._rot_baud_rate = 9600
-            self.log.warning('No parameter "rot_baud_rate" found in config!\n'
-                    'Taking the baud rate {0} '
-                    'instead.'.format(self._rot_baud_rate))
-
-        if 'zaber_timeout' in config.keys():
-            self._rot_timeout = config['zaber_timeout']
-        else:
-            self._rot_timeout = 5000     #TIMEOUT shorter?
-            self.log.warning('No parameter "rot_timeout" found in config!\n'
-                    'Setting the timeout to {0} '
-                    'instead.'.format(self._rot_timeout))
-
-        # get the the right term_chars from config
-        if 'zaber_term_char' in config.keys():
-            self._rot_term_char = config['zaber_term_char']
-        else:
-            self._rot_term_char = '\n'
-            self.log.warning('No parameter "rot_term_char" found in config!\n'
-                    'Taking the term_char {0} '
-                    'instead.'.format(self._rot_term_char))
-
-        # axis definition:
-        if 'zaber_axis_label' in config.keys():
-            self._axis_label = config['zaber_axis_label']
-        else:
-            self._axis_label = 'phi'
-            self.log.warning('No parameter "zaber_axis_label" found in config!\n'
-                    'Taking the term_char {0} '
-                    'instead.'.format( self._axis_label))
-
-        self._serial_connection_rot = serial.Serial(port=self._com_port_rot,
-                                                    baudrate=self._rot_baud_rate,
-                                                    bytesize=8,
-                                                    parity='N',
-                                                    stopbits=1,
-                                                    timeout=self._rot_timeout)
-        #self._serial_connection_rot.term_chars = self._rot_term_char
-        #self._serial_connection_rot.close()
-
-
-        # read constraints from config
-        if 'zaber_angle_min' in config.keys():
-            self._min_angle = config['zaber_angle_min']
-        else:
-            self._min_angle = -1e5
-            self.log.warning('No parameter "zaber_angle_min" found in config!\n'
-                    'Taking -1e5 degree instead.')
-        if 'zaber_angle_max' in config.keys():
-            self._max_angle = config['zaber_angle_max']
-        else:
-            self._max_angle = 1e5
-            self.log.warning('No parameter "zaber_angle_max" found in config!\n'
-                    'Taking 1e5 degree instead.')
-        if 'zaber_angle_step' in config.keys():
-            self._min_step = config['zaber_angle_step']
-        else:
-            self._min_step = 1e-5
-            self.log.warning('No parameter "zaber_angle_step" found in config!\n'
-                    'Taking 1e-5 degree instead.')
-
-        if 'zaber_velocity_min' in config.keys():
-            self._min_vel = config['zaber_velocity_min']
-        else:
-            self._min_vel = 1e-3
-            self.log.warning('No parameter "zaber_velocity_min" found in config!\n'
-                    'Taking 1e-6 degree/s instead.')
-
-        if 'zaber_velocity_max' in config.keys():
-            self._max_vel = config['zaber_velocity_max']
-        else:
-            self._max_vel = 10
-            self.log.warning('No parameter "zaber_velocity_max" found in config!\n'
-                    'Taking 10 degree/s instead.')
-
-        if 'zaber_velocity_step' in config.keys():
-            self._step_vel = config['zaber_velocity_step']
-        else:
-            self._step_vel = 1e-3
-            self.log.warning('No parameter "zaber_velocity_step" found in config!\n'
-                    'Taking 1e-3 degree/s instead.')
-
-        if 'zaber_micro_step_size' in config.keys():
-            self._micro_step_size = config['zaber_micro_step_size']
-        else:
-            self._micro_step_size = 0.000234375
-            self.log.warning('No parameter "zaber_micro_step_size" found in config!\n'
-                    'Taking 0.000234375 instead.')
-        if 'zaber_speed_conversion' in config.keys():
-            self.velocity_conversion = config['zaber_speed_conversion']
-        else:
-            self.velocity_conversion = 9.375
-            self.log.warning('No parameter "zaber_speed_conversion" found in config!\n'
-                    'Taking 9.375 instead.')
         return 0
-
 
 
     def on_deactivate(self):
@@ -173,25 +113,23 @@ class MotorRotationZaber(Base, MotorInterface):
         """
         constraints = OrderedDict()
 
-        rot = {}
-        rot['label'] = self._axis_label
-        rot['ID'] = None
-        rot['unit'] = '°'
-        rot['ramp'] = None
-        rot['pos_min'] = self._min_angle
-        rot['pos_max'] = self._max_angle
-        rot['pos_step'] = self._min_step
-        rot['vel_min'] = self._min_vel
-        rot['vel_max'] = self._max_vel
-        rot['vel_step'] = self._step_vel
-        rot['acc_min'] = None
-        rot['acc_max'] = None
-        rot['acc_step'] = None
+        rot = {'label': self._axis_label,
+               'ID': None,
+               'unit': '°',
+               'ramp': None,
+               'pos_min': self._min_angle,
+               'pos_max': self._max_angle,
+               'pos_step': self._min_step,
+               'vel_min': self._min_vel,
+               'vel_max': self._max_vel,
+               'vel_step': self._step_vel,
+               'acc_min': None,
+               'acc_max': None,
+               'acc_step': None}
 
         # assign the parameter container to a name which will identify it
         constraints[rot['label']] = rot
         return constraints
-
 
     def move_rel(self, param_dict):
         """Moves stage by a given angle (relative movement)
@@ -394,18 +332,18 @@ class MotorRotationZaber(Base, MotorInterface):
 ########################## internal methods ##################################
 
 
-    def _write_rot(self, list):
-        ''' sending a command encode in a list to the rotation stage,
+    def _write_rot(self, command_list):
+        """ sending a command encode in a list to the rotation stage,
         requires [1, commandnumber, value]
 
-        @param list list: command in a list form
+        @param list command_list: command in a list form
 
-        @return errorcode'''
+        @return errorcode"""
 
         try:
-            xx = list[0]
-            yy = list[1]
-            zz = list[2]
+            xx = command_list[0]
+            yy = command_list[1]
+            zz = command_list[2]
             z4 = 0
             z3 = 0
             z2 = 0
@@ -444,12 +382,12 @@ class MotorRotationZaber(Base, MotorInterface):
             return -1
 
     def _read_answer_rot(self):
-        '''this method reads the answer from the motor!
+        """this method reads the answer from the motor!
         return 6 bytes from the receive buffer
         there must be 6 bytes to receive (no error checking)
 
         @return answer float: answer of motor coded in a single float
-        '''
+        """
 
 
         r = [0, 0, 0, 0, 0, 0]
@@ -467,20 +405,20 @@ class MotorRotationZaber(Base, MotorInterface):
         return answer
 
 
-    def _ask_rot(self,list):
-        '''this method combines writing a command and reading the answer
-        @param list list: list encoded command
+    def _ask_rot(self, command_list):
+        """this method combines writing a command and reading the answer
+        @param list command_list: list encoded command
 
         @return answer float: answer of motor coded in a single float
-        '''
-        self._write_rot(list)
+        """
+        self._write_rot(command_list)
         time.sleep(0.1)
         answer=self._read_answer_rot()
         return answer
 
     def _motor_stopped(self):
-        '''checks if the rotation stage is still moving
-        @return: bool stopped: True if motor is not moving, False otherwise'''
+        """checks if the rotation stage is still moving
+        @return: bool stopped: True if motor is not moving, False otherwise"""
 
         stopped=True
         status = self.get_status()
@@ -489,11 +427,11 @@ class MotorRotationZaber(Base, MotorInterface):
         return stopped
 
     def _map_angle(self, init_angle):
-        '''maps the angle if larger or lower than 360° to inbetween 0° and 360°
+        """maps the angle if larger or lower than 360° to inbetween 0° and 360°
 
         @params init_angle: initial angle, possible not element of {0°,360°}
 
-        @return: float angle: Angle between 0° and 360°'''
+        @return: float angle: Angle between 0° and 360°"""
 
         angle = init_angle%360
 

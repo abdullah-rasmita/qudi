@@ -19,25 +19,26 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-from collections import OrderedDict
 from cycler import cycler
+import datetime
+import inspect
 import logging
+import matplotlib.pyplot as plt
+import numpy as np
 import os
 import sys
-import inspect
 import time
-import datetime
-import numpy as np
 
-from logic.generic_logic import GenericLogic
-from core.util.mutex import Mutex
+from collections import OrderedDict
+from core.configoption import ConfigOption
 from core.util import units
-import matplotlib.pyplot as plt
-# Use the PDF backend to attach metadata
+from core.util.mutex import Mutex
+from core.util.network import netobtain
+from logic.generic_logic import GenericLogic
 from matplotlib.backends.backend_pdf import PdfPages
-# Use Pillow (active fork from PIL) to attach metadata to PNG files
 from PIL import Image
 from PIL import PngImagePlugin
+
 
 class DailyLogHandler(logging.FileHandler):
     """
@@ -105,7 +106,6 @@ class DailyLogHandler(logging.FileHandler):
             super().emit(record)
 
 
-
 class FunctionImplementationError(Exception):
 
     def __init__(self, value):
@@ -119,35 +119,53 @@ class SaveLogic(GenericLogic):
 
     """
     A general class which saves all kinds of data in a general sense.
+
+    Example config for copy-paste:
+    
+    savelogic:
+        module.Class: 'save_logic.SaveLogic'
+        win_data_directory: 'C:/Data'   # DO NOT CHANGE THE DIRECTORY HERE! ONLY IN THE CUSTOM FILE!
+        unix_data_directory: 'Data/'
+        log_into_daily_directory: True
+        save_pdf: True
+        save_png: True
     """
 
-    _modclass = 'savelogic'
-    _modtype = 'logic'
+    _win_data_dir = ConfigOption('win_data_directory', 'C:/Data/')
+    _unix_data_dir = ConfigOption('unix_data_directory', 'Data')
+    log_into_daily_directory = ConfigOption('log_into_daily_directory', False, missing='warn')
+    save_pdf = ConfigOption('save_pdf', False)
+    save_png = ConfigOption('save_png', True)
 
     # Matplotlib style definition for saving plots
-    mpl_qd_style = {'axes.prop_cycle': cycler('color', ['#1f17f4',
-                                                        '#ffa40e',
-                                                        '#ff3487',
-                                                        '#008b00',
-                                                        '#17becf',
-                                                        '#850085'
-                                                        ]
-                                              ) + cycler('marker', ['o', 's', '^', 'v', 'D', 'd']),
-                    'axes.edgecolor': '0.3',
-                    'xtick.color': '0.3',
-                    'ytick.color': '0.3',
-                    'axes.labelcolor': 'black',
-                    'font.size': '14',
-                    'lines.linewidth': '2',
-                    'figure.figsize': '12, 6',
-                    'lines.markeredgewidth': '0',
-                    'lines.markersize': '5',
-                    'axes.spines.right': True,
-                    'axes.spines.top': True,
-                    'xtick.minor.visible': True,
-                    'ytick.minor.visible': True,
-                    'savefig.dpi': '180'
-                    }
+    mpl_qd_style = {
+        'axes.prop_cycle': cycler(
+            'color',
+            ['#1f17f4',
+            '#ffa40e',
+            '#ff3487',
+            '#008b00',
+            '#17becf',
+            '#850085'
+            ]
+            ) + cycler('marker', ['o', 's', '^', 'v', 'D', 'd']),
+        'axes.edgecolor': '0.3',
+        'xtick.color': '0.3',
+        'ytick.color': '0.3',
+        'axes.labelcolor': 'black',
+        'font.size': '14',
+        'lines.linewidth': '2',
+        'figure.figsize': '12, 6',
+        'lines.markeredgewidth': '0',
+        'lines.markersize': '5',
+        'axes.spines.right': True,
+        'axes.spines.top': True,
+        'xtick.minor.visible': True,
+        'ytick.minor.visible': True,
+        'savefig.dpi': '180'
+        }
+
+    _additional_parameters = {}
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
@@ -155,52 +173,34 @@ class SaveLogic(GenericLogic):
         # locking for thread safety
         self.lock = Mutex()
 
-        self.log.info('The following configuration was found.')
-
         # name of active POI, default to empty string
         self.active_poi_name = ''
 
         # Some default variables concerning the operating system:
         self.os_system = None
-        self.default_unix_data_dir = 'Data'
-        self.default_win_data_dir = 'C:/Data/'
 
         # Chech which operation system is used and include a case if the
         # directory was not found in the config:
         if sys.platform in ('linux', 'darwin'):
             self.os_system = 'unix'
-            if 'unix_data_directory' in config:
-                self.data_dir = config['unix_data_directory']
-            else:
-                self.data_dir = self.default_unix_data_dir
-
+            self.data_dir = self._unix_data_dir
         elif 'win32' in sys.platform or 'AMD64' in sys.platform:
             self.os_system = 'win'
-            if 'win_data_directory' in config.keys():
-                self.data_dir = config['win_data_directory']
-            else:
-                self.data_dir = self.default_win_data_dir
+            self.data_dir = self._win_data_dir
         else:
-            self.log.error('Identify the operating system.')
+            raise Exception('Identify the operating system.')
+
+        # Expand environment variables in the data_dir path (e.g. $HOME)
+        self.data_dir = os.path.expandvars(self.data_dir)
 
         # start logging into daily directory?
-        if 'log_into_daily_directory' in config.keys():
-            if not isinstance(config['log_into_daily_directory'], bool):
-                self.log.warning('log entry in configuration is not a '
-                        'boolean. Falling back to default setting: False.')
+        if not isinstance(self.log_into_daily_directory, bool):
+                self.log.warning(
+                    'log entry in configuration is not a '
+                    'boolean. Falling back to default setting: False.')
                 self.log_into_daily_directory = False
-            else:
-                self.log_into_daily_directory = config[
-                        'log_into_daily_directory']
-        else:
-            self.log.warning('Configuration has no entry log. Falling back '
-                    'to default setting: False.')
-            self.log_into_daily_directory = False
-        self._daily_loghandler = None
 
-        # checking for the right configuration
-        for key in config.keys():
-            self.log.info('{0}: {1}'.format(key, config[key]))
+        self._daily_loghandler = None
 
     def on_activate(self):
         """ Definition, configuration and initialisation of the SaveLogic.
@@ -421,44 +421,6 @@ class SaveLogic(GenericLogic):
                            'data arrays.')
             return -1
 
-        # Reshape data if multiple 1D arrays have been passed to this method.
-        # If a 2D array has been passed, reformat the specifier
-        if len(data) != 1:
-            identifier_str = ''
-            if multiple_dtypes:
-                field_dtypes = list(zip(['f{0:d}'.format(i) for i in range(len(arr_dtype))],
-                                        arr_dtype))
-                new_array = np.empty(max_line_num, dtype=field_dtypes)
-                for i, keyname in enumerate(data):
-                    identifier_str += keyname + delimiter
-                    field = 'f{0:d}'.format(i)
-                    length = data[keyname].size
-                    new_array[field][:length] = data[keyname]
-                    if length < max_line_num:
-                        if isinstance(data[keyname][0], str):
-                            new_array[field][length:] = 'nan'
-                        else:
-                            new_array[field][length:] = np.nan
-            else:
-                new_array = np.empty([max_line_num, max_row_num], arr_dtype[0])
-                for i, keyname in enumerate(data):
-                    identifier_str += keyname + delimiter
-                    length = data[keyname].size
-                    new_array[:length, i] = data[keyname]
-                    if length < max_line_num:
-                        if isinstance(data[keyname][0], str):
-                            new_array[length:, i] = 'nan'
-                        else:
-                            new_array[length:, i] = np.nan
-            # discard old data array and use new one
-            data = {identifier_str: new_array}
-        elif found_2d:
-            keyname = list(data.keys())[0]
-            identifier_str = keyname.replace(', ', delimiter).replace(',', delimiter)
-            data[identifier_str] = data.pop(keyname)
-        else:
-            identifier_str = list(data)[0]
-
         # Create header string for the file
         header = 'Saved Data from the class {0} on {1}.\n' \
                  ''.format(module_name, timestamp.strftime('%d.%m.%Y at %Hh%Mm%Ss'))
@@ -470,6 +432,8 @@ class SaveLogic(GenericLogic):
         if parameters is not None:
             # check whether the format for the parameters have a dict type:
             if isinstance(parameters, dict):
+                if isinstance(self._additional_parameters, dict):
+                    parameters = {**self._additional_parameters, **parameters}
                 for entry, param in parameters.items():
                     if isinstance(param, float):
                         header += '{0}: {1:.16e}\n'.format(entry, param)
@@ -481,16 +445,61 @@ class SaveLogic(GenericLogic):
                                'try to save the parameters nevertheless.')
                 header += 'not specified parameters: {0}\n'.format(parameters)
         header += '\nData:\n=====\n'
-        header += list(data)[0]
 
         # write data to file
         # FIXME: Implement other file formats
+        # write to textfile
         if filetype == 'text':
+            # Reshape data if multiple 1D arrays have been passed to this method.
+            # If a 2D array has been passed, reformat the specifier
+            if len(data) != 1:
+                identifier_str = ''
+                if multiple_dtypes:
+                    field_dtypes = list(zip(['f{0:d}'.format(i) for i in range(len(arr_dtype))],
+                                            arr_dtype))
+                    new_array = np.empty(max_line_num, dtype=field_dtypes)
+                    for i, keyname in enumerate(data):
+                        identifier_str += keyname + delimiter
+                        field = 'f{0:d}'.format(i)
+                        length = data[keyname].size
+                        new_array[field][:length] = data[keyname]
+                        if length < max_line_num:
+                            if isinstance(data[keyname][0], str):
+                                new_array[field][length:] = 'nan'
+                            else:
+                                new_array[field][length:] = np.nan
+                else:
+                    new_array = np.empty([max_line_num, max_row_num], arr_dtype[0])
+                    for i, keyname in enumerate(data):
+                        identifier_str += keyname + delimiter
+                        length = data[keyname].size
+                        new_array[:length, i] = data[keyname]
+                        if length < max_line_num:
+                            if isinstance(data[keyname][0], str):
+                                new_array[length:, i] = 'nan'
+                            else:
+                                new_array[length:, i] = np.nan
+                # discard old data array and use new one
+                data = {identifier_str: new_array}
+            elif found_2d:
+                keyname = list(data.keys())[0]
+                identifier_str = keyname.replace(', ', delimiter).replace(',', delimiter)
+                data[identifier_str] = data.pop(keyname)
+            else:
+                identifier_str = list(data)[0]
+            header += list(data)[0]
             self.save_array_as_text(data=data[identifier_str], filename=filename, filepath=filepath,
                                     fmt=fmt, header=header, delimiter=delimiter, comments='#',
                                     append=False)
+        # write npz file and save parameters in textfile
+        elif filetype == 'npz':
+            header += str(list(data.keys()))[1:-1]
+            np.savez_compressed(filepath + '/' + filename[:-4], **data)
+            self.save_array_as_text(data=[], filename=filename[:-4]+'_params.dat', filepath=filepath,
+                                    fmt=fmt, header=header, delimiter=delimiter, comments='#',
+                                    append=False)
         else:
-            self.log.error('Only saving of data as textfile is implemented. Filetype "{0}" is not '
+            self.log.error('Only saving of data as textfile and npz-file is implemented. Filetype "{0}" is not '
                            'supported yet. Saving as textfile.'.format(filetype))
             self.save_array_as_text(data=data[identifier_str], filename=filename, filepath=filepath,
                                     fmt=fmt, header=header, delimiter=delimiter, comments='#',
@@ -512,43 +521,45 @@ class SaveLogic(GenericLogic):
             else:
                 metadata['CreationDate'] = time
                 metadata['ModDate'] = time
+            
+            if self.save_pdf:
+                # determine the PDF-Filename
+                fig_fname_vector = os.path.join(filepath, filename)[:-4] + '_fig.pdf'
 
-            # determine the PDF-Filename
-            fig_fname_vector = os.path.join(filepath, filename)[:-4] + '_fig.pdf'
+                # Create the PdfPages object to which we will save the pages:
+                # The with statement makes sure that the PdfPages object is closed properly at
+                # the end of the block, even if an Exception occurs.
+                with PdfPages(fig_fname_vector) as pdf:
+                    pdf.savefig(plotfig, bbox_inches='tight', pad_inches=0.05)
 
-            # Create the PdfPages object to which we will save the pages:
-            # The with statement makes sure that the PdfPages object is closed properly at
-            # the end of the block, even if an Exception occurs.
-            with PdfPages(fig_fname_vector) as pdf:
-                pdf.savefig(plotfig, bbox_inches='tight', pad_inches=0.05)
+                    # We can also set the file's metadata via the PdfPages object:
+                    pdf_metadata = pdf.infodict()
+                    for x in metadata:
+                        pdf_metadata[x] = metadata[x]
 
-                # We can also set the file's metadata via the PdfPages object:
-                pdf_metadata = pdf.infodict()
+            if self.save_png:
+                # determine the PNG-Filename and save the plain PNG
+                fig_fname_image = os.path.join(filepath, filename)[:-4] + '_fig.png'
+                plotfig.savefig(fig_fname_image, bbox_inches='tight', pad_inches=0.05)
+
+                # Use Pillow (an fork for PIL) to attach metadata to the PNG
+                png_image = Image.open(fig_fname_image)
+                png_metadata = PngImagePlugin.PngInfo()
+
+                # PIL can only handle Strings, so let's convert our times
+                metadata['CreationDate'] = metadata['CreationDate'].strftime('%Y%m%d-%H%M-%S')
+                metadata['ModDate'] = metadata['ModDate'].strftime('%Y%m%d-%H%M-%S')
+
                 for x in metadata:
-                    pdf_metadata[x] = metadata[x]
+                    # make sure every value of the metadata is a string
+                    if not isinstance(metadata[x], str):
+                        metadata[x] = str(metadata[x])
 
-            # determine the PNG-Filename and save the plain PNG
-            fig_fname_image = os.path.join(filepath, filename)[:-4] + '_fig.png'
-            plotfig.savefig(fig_fname_image, bbox_inches='tight', pad_inches=0.05)
+                    # add the metadata to the picture
+                    png_metadata.add_text(x, metadata[x])
 
-            # Use Pillow (an fork for PIL) to attach metadata to the PNG
-            png_image = Image.open(fig_fname_image)
-            png_metadata = PngImagePlugin.PngInfo()
-
-            # PIL can only handle Strings, so let's convert our times
-            metadata['CreationDate'] = metadata['CreationDate'].strftime('%Y%m%d-%H%M-%S')
-            metadata['ModDate'] = metadata['ModDate'].strftime('%Y%m%d-%H%M-%S')
-
-            for x in metadata:
-                # make sure every value of the metadata is a string
-                if not isinstance(metadata[x], str):
-                    metadata[x] = str(metadata[x])
-
-                # add the metadata to the picture
-                png_metadata.add_text(x, metadata[x])
-
-            # save the picture again, this time including the metadata
-            png_image.save(fig_fname_image, "png", pnginfo=png_metadata)
+                # save the picture again, this time including the metadata
+                png_image.save(fig_fname_image, "png", pnginfo=png_metadata)
 
             # close matplotlib figure
             plt.close(plotfig)
@@ -572,81 +583,8 @@ class SaveLogic(GenericLogic):
                            comments=comments)
         return
 
-    def save_array_as_xml(self):
-        """ Save data in xml conding. """
-        pass
-#        if as_xml:
-#
-#            root = ET.Element(module_name)  # which class wanted to access the save
-#                                            # function
-#
-#            para = ET.SubElement(root, 'Parameters')
-#
-#            if parameters != None:
-#                for element in parameters:
-#                    ET.SubElement(para, element).text = parameters[element]
-#
-#            data_xml = ET.SubElement(root, 'data')
-#
-#            for entry in data:
-#
-#                dimension_data_array = len(np.shape(data[entry]))
-#
-#                # filter out the events which has only a single trace:
-#                if dimension_data_array == 1:
-#
-#                    value = ET.SubElement(data_xml, entry)
-#
-#                    for list_element in data[entry]:
-#
-#                        ET.SubElement(value, 'value').text = str(list_element)
-#
-#                elif dimension_data_array == 2:
-#
-#                    dim_list_entry = len(np.shape(data[entry][0]))
-#                    length_list_entry = np.shape(data[entry][0])[0]
-#                    if (dim_list_entry == 1) and (np.shape(data[entry][0])[0] == 2):
-#
-#                        # get from the keyword, which should be within the string
-#                        # separated by the delimiter ',' the description for the
-#                        # values:
-#                        try:
-#                            axis1 = entry.split(',')[0]
-#                            axis2 = entry.split(',')[1]
-#                        except:
-#                            print('Enter a commaseparated description for the given values!!!')
-#                            print('like:  dict_data[\'Frequency (MHz), Signal (arb. u.)\'] = 2d_list ')
-#                            print('But your data will be saved.')
-#
-#                            axis1 = str(entry)
-#                            axis2 = 'value2'
-#
-#                        for list_element in data[entry]:
-#
-#                            element = ET.SubElement(data_xml, 'value' ).text = str(list_element)
-##
-##                            ET.SubElement(element, str(axis1)).text = str(list_element[0])
-##                            ET.SubElement(element, str(axis2)).text = str(list_element[1])
-#
-#                    elif (dim_list_entry == 1):
-#
-#                        for list_element in data[entry]:
-#
-#                            row = ET.SubElement(data_xml, 'row')
-#
-#                            for sub_element in list_element:
-#
-#                                ET.SubElement(row, 'value').text = str(sub_element)
-#
-#
-#
-#            #write to file:
-#            tree = ET.ElementTree(root)
-#            tree.write('output.xml', pretty_print=True, xml_declaration=True)
-
     def get_daily_directory(self):
-        """
-        Creates the daily directory.
+        """ Gets or creates daily save directory.
 
           @return string: path to the daily directory.
 
@@ -658,49 +596,14 @@ class SaveLogic(GenericLogic):
         and the filepath is returned. There should be always a filepath
         returned.
         """
+        current_dir = os.path.join(
+            self.data_dir, 
+            time.strftime("%Y"), 
+            time.strftime("%m"),
+            time.strftime("%Y%m%d"))
 
-        # First check if the directory exists and if not then the default
-        # directory is taken.
-        if not os.path.exists(self.data_dir):
-                if self.data_dir != '':
-                    self.log.warning('The specified Data Directory in the '
-                            'config file does not exist. Using default '
-                            'instead.')
-                if self.os_system == 'unix':
-                    self.data_dir = self.default_unix_data_dir
-                elif self.os_system == 'win':
-                    self.data_dir = self.default_win_data_dir
-                else:
-                    self.log.error('Identify the operating system.')
-
-                # Check if the default directory does exist. If yes, there is
-                # no need to create it, since it will overwrite the existing
-                # data there.
-                if not os.path.exists(self.data_dir):
-                    os.makedirs(self.data_dir)
-                    self.log.warning('The specified Data Directory in the '
-                            'config file does not exist. Using default for '
-                            '{0} system instead. The directory {1} was '
-                            'created'.format(self.os_system, self.data_dir))
-
-        # That is now the current directory:
-        current_dir = os.path.join(self.data_dir, time.strftime("%Y"), time.strftime("%m"))
-
-        folder_exists = False   # Flag to indicate that the folder does not exist.
-        if os.path.exists(current_dir):
-
-            # Get only the folders without the files there:
-            folderlist = [d for d in os.listdir(current_dir) if os.path.isdir(os.path.join(current_dir, d))]
-            # Search if there is a folder which starts with the current date:
-            for entry in folderlist:
-                if (time.strftime("%Y%m%d") in (entry[:2])):
-                    current_dir = os.path.join(current_dir, str(entry))
-                    folder_exists = True
-                    break
-
-        if not folder_exists:
-            current_dir = os.path.join(current_dir, time.strftime("%Y%m%d"))
-            self.log.info('Creating directory for today\'s data in \n'
+        if not os.path.isdir(current_dir):
+            self.log.info("Creating directory for today's data:\n"
                     '{0}'.format(current_dir))
 
             # The exist_ok=True is necessary here to prevent Error 17 "File Exists"
@@ -719,6 +622,42 @@ class SaveLogic(GenericLogic):
         """
         dir_path = os.path.join(self.get_daily_directory(), module_name)
 
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path)
+        if not os.path.isdir(dir_path):
+            os.makedirs(dir_path, exist_ok=True)
         return dir_path
+
+    def get_additional_parameters(self):
+        """ Method that return the additional parameters dictionary securely """
+        return self._additional_parameters.copy()
+
+    def update_additional_parameters(self, *args, **kwargs):
+        """
+        Method to update one or multiple additional parameters
+
+        @param dict args: Optional single positional argument holding parameters in a dict to
+                          update additional parameters from.
+        @param kwargs: Optional keyword arguments to be added to additional parameters
+        """
+        if len(args) == 0:
+            param_dict = kwargs
+        elif len(args) == 1 and isinstance(args[0], dict):
+            param_dict = args[0]
+            param_dict.update(kwargs)
+        else:
+            raise TypeError('"update_additional_parameters" takes exactly 0 or 1 positional '
+                            'argument of type dict.')
+
+        for key in param_dict.keys():
+            param_dict[key] = netobtain(param_dict[key])
+        self._additional_parameters.update(param_dict)
+        return
+
+    def remove_additional_parameter(self, key):
+        """
+        remove parameter from additional parameters
+
+        @param str key: The additional parameters key/name to delete
+        """
+        self._additional_parameters.pop(key, None)
+        return
+

@@ -25,7 +25,8 @@ import fnmatch
 import inspect
 import importlib
 
-from qtpy import QtCore, QtWidgets
+from qtpy import QtCore
+
 
 class Module(QtCore.QObject):
     """ This class represents a Qudi module.
@@ -33,7 +34,7 @@ class Module(QtCore.QObject):
 
     sigAddModule = QtCore.Signal(object)
 
-    def __init__(self, path, name, ref, connections, interfaces):
+    def __init__(self, path, name, ref, connections, interfaces, options, stat_vars):
         super().__init__()
         self.path = path
         if path.startswith('hardware'):
@@ -47,6 +48,8 @@ class Module(QtCore.QObject):
         self.connections = connections
         self.interfaces = interfaces
         self.reference = ref
+        self.options = options
+        self.stat_vars = stat_vars
 
     def addModule(self):
         """ Add this module to the config.
@@ -56,8 +59,8 @@ class Module(QtCore.QObject):
     def print_connectors(self):
         if len(self.connections) > 0:
             print('  IN:')
-            for conn in self.connections:
-                print('    {}: {}'.format(conn[0], conn[1]))
+            for cname, conn in self.connections.items():
+                print('    {}: {}'.format(conn.name, conn.ifname))
             print('')
 
     def print_interfaces(self):
@@ -65,6 +68,26 @@ class Module(QtCore.QObject):
         for interface in self.interfaces:
             print('    {}'.format(interface))
         print('')
+
+    def print_options(self):
+        if len(self.options) > 0:
+            print('  OPT:')
+            for oname, opt in self.options.items():
+                print('    {}: {}'.format(opt.name, opt.default))
+            print('')
+
+    def print_vars(self):
+        if len(self.stat_vars) > 0:
+            print('  VAR:')
+            for vname, var in self.stat_vars.items():
+                print('    {}: {}'.format(var.name, var.default))
+            print('')
+
+    def print_all(self):
+        self.print_connectors()
+        self.print_interfaces()
+        self.print_options()
+        self.print_vars()
 
 
 def find_pyfiles(path):
@@ -89,8 +112,8 @@ def find_pyfiles(path):
     return pyfiles
 
 def check_qudi_modules(filelist):
-    from core.base import Base
-    from core.util.interfaces import InterfaceMetaclass
+    from core.module import Base
+    from core.meta import InterfaceMetaclass
     from gui.guibase import GUIBase
     from logic.generic_logic import GenericLogic
     from logic.generic_task import InterruptableTask, PrePostTask
@@ -122,16 +145,20 @@ def check_qudi_modules(filelist):
                             path,
                             thingname,
                             thing,
-                            [(i,v) for i, v in thing._connectors.items()],
-                            [thingname]
+                            thing._conn,
+                            [thingname],
+                            thing._config_options,
+                            thing._stat_vars
                             )
                     elif issubclass(thing, GUIBase) and thingname != 'GUIBase':
                         modules['gui'][path] = Module(
                             path,
                             thingname,
                             thing,
-                            [(i,v) for i, v in thing._connectors.items()],
-                            [thingname]
+                            thing._conn,
+                            [thingname],
+                            thing._config_options,
+                            thing._stat_vars
                             )
                     elif issubclass(thing, InterruptableTask) and thingname != 'InterruptableTask' :
                         modules['itask'][path] = {'pause': [i for i in thing.pauseTasks]}
@@ -146,8 +173,10 @@ def check_qudi_modules(filelist):
                             path,
                             thingname,
                             thing,
-                            [(i,v) for i, v in thing._connectors.items()],
-                            [thingname]
+                            thing._conn,
+                            [thingname],
+                            thing._config_options,
+                            thing._stat_vars
                             )
                     elif (f.startswith('interface')
                         and not issubclass(thing, Base)
@@ -167,8 +196,12 @@ def check_qudi_modules(filelist):
         for modpath, module in modules[base].items():
             for ifname, interface in modules['interface'].items():
                 n = ifname.split('.')[-1]
-                if issubclass(module.reference, interface):
-                    module.interfaces.append(n)
+                try:
+                    if issubclass(module.reference, interface):
+                        module.interfaces.append(n)
+                except AttributeError as e:
+                    print('Interface {1} subclass check failed for {0}'
+                        ''.format(module.reference, interface))
 
     return modules, importsuccess, importerror, othererror
 
@@ -184,18 +217,15 @@ if __name__ == '__main__':
 
     for k, v in m['hardware'].items():
         print('MODULE {}'.format(k))
-        v.print_connectors()
-        v.print_interfaces()
+        v.print_all()
 
     for k, v in m['logic'].items():
         print('MODULE {}'.format(k))
-        v.print_connectors()
-        v.print_interfaces()
+        v.print_all()
 
     for k, v in m['gui'].items():
         print('MODULE {}'.format(k))
-        v.print_connectors()
-        v.print_interfaces()
+        v.print_all()
 
     for k, v in m['pptask'].items():
         print('PPTASK {}'.format(k))

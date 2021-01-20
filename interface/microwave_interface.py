@@ -20,9 +20,9 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-import abc
-from core.util.interfaces import InterfaceMetaclass
-from core.util.units import in_range
+from core.interface import abstract_interface_method
+from core.meta import InterfaceMetaclass
+from core.util.helpers import in_range
 from enum import Enum
 
 class TriggerEdge(Enum):
@@ -46,108 +46,108 @@ class MicrowaveMode(Enum):
     SWEEP = 3
     ASWEEP = 4
 
+
 class MicrowaveInterface(metaclass=InterfaceMetaclass):
-    """This is the Interface class to define the controls for the simple
-    microwave hardware.
+    """This is the Interface class to define the controls for the simple microwave hardware.
+
+    This interface is designed to interface microwave generator where the power and frequency of the produced microwave
+    can be set. Is can be operated in CW (continuous wave) or as a sweep system synchronised with a measured device.
+
     """
 
-    _modclass = 'MicrowaveInterface'
-    _modtype = 'interface'
-
-    @abc.abstractmethod
-    def on(self):
-        """ Switches on any preconfigured microwave output.
-
-        @return int: error code (0:OK, -1:error)
-        """
-        pass
-
-    @abc.abstractmethod
+    @abstract_interface_method
     def off(self):
         """ Switches off any microwave output.
 
         @return int: error code (0:OK, -1:error)
+
+        Must return AFTER the device is actually stopped.
         """
         pass
 
-    @abc.abstractmethod
+    @abstract_interface_method
+    def get_status(self):
+        """ Gets the current status of the MW source, i.e. the mode (cw, list or sweep) and
+            the output state (stopped, running)
+
+        @return str, bool: mode ['cw', 'list', 'sweep'], is_running [True, False]
+        """
+        pass
+
+    @abstract_interface_method
     def get_power(self):
-        """ Gets the microwave output power.
+        """ Gets the microwave output power for the currently active mode.
 
-        @return float: the power set at the device in dBm
+        @return float: the output power in dBm
         """
         pass
 
-    @abc.abstractmethod
-    def set_power(self, power=0.):
-        """ Sets the microwave output power.
-
-        @param float power: the power (in dBm) set for this device
-
-        @return int: error code (0:OK, -1:error)
-        """
-        pass
-
-    @abc.abstractmethod
+    @abstract_interface_method
     def get_frequency(self):
         """ Gets the frequency of the microwave output.
 
-        @return float: frequency (in Hz), which is currently set for this device
+        @return [float, list]: frequency(s) currently set for this device in Hz
+
+        Returns single float value if the device is in cw mode.
+        Returns list like [start, stop, step] if the device is in sweep mode.
+        Returns list of frequencies if the device is in list mode.
         """
         pass
 
-    @abc.abstractmethod
-    def set_frequency(self, freq=0.):
-        """ Sets the frequency of the microwave output.
-
-        @param float freq: the frequency (in Hz) set for this device
-
-        @return int: error code (0:OK, -1:error)
-        """
-        pass
-
-    @abc.abstractmethod
-    def set_cw(self, freq=None, power=None, useinterleave=None):
-        """ Sets the MW mode to cw and additionally frequency and power
-
-        @param float freq: frequency to set in Hz
-        @param float power: power to set in dBm
-        @param bool useinterleave: If this mode exists you can choose it.
+    @abstract_interface_method
+    def cw_on(self):
+        """ Switches on cw microwave output.
 
         @return int: error code (0:OK, -1:error)
 
-        Interleave option is used for arbitrary waveform generator devices.
+        Must return AFTER the device is actually running.
         """
         pass
 
-    @abc.abstractmethod
-    def set_list(self, freq=None, power=None):
-        """ Sets the MW mode to list mode
+    @abstract_interface_method
+    def set_cw(self, frequency=None, power=None):
+        """ Configures the device for cw-mode and optionally sets frequency and/or power
 
-        @param list freq: list of frequencies in Hz
-        @param float power: MW power of the frequency list in dBm
+        @param (float) frequency: frequency to set in Hz
+        @param (float) power: power to set in dBm
 
-        @return int: error code (0:OK, -1:error)
+        @return tuple(float, float, str): with the relation
+            current frequency in Hz,
+            current power in dBm,
+            current mode
         """
         pass
 
-    @abc.abstractmethod
-    def reset_listpos(self):
-        """ Reset of MW List Mode position to start from first given frequency
-
-        @return int: error code (0:OK, -1:error)
-        """
-        pass
-
-    @abc.abstractmethod
+    @abstract_interface_method
     def list_on(self):
-        """ Switches on the list mode.
+        """  Switches on the list mode microwave output.
+
+        @return int: error code (0:OK, -1:error)
+
+        Must return AFTER the device is actually running.
+        """
+        pass
+
+    @abstract_interface_method
+    def set_list(self, frequency=None, power=None):
+        """ Configures the device for list-mode and optionally sets frequencies and/or power
+
+        @param (list(float)) frequency: list of frequencies in Hz
+        @param (float) power: MW power of the frequency list in dBm
+
+        @return tuple(list, float, str): current frequencies in Hz, current power in dBm, current mode
+        """
+        pass
+
+    @abstract_interface_method
+    def reset_listpos(self):
+        """ Reset of MW list mode position to start (first frequency step)
 
         @return int: error code (0:OK, -1:error)
         """
         pass
 
-    @abc.abstractmethod
+    @abstract_interface_method
     def sweep_on(self):
         """ Switches on the sweep mode.
 
@@ -155,32 +155,50 @@ class MicrowaveInterface(metaclass=InterfaceMetaclass):
         """
         pass
 
-    @abc.abstractmethod
-    def set_sweep(self, start, stop, step, power):
-        """ Sweep from frequency start to frequency sto pin steps of width stop with power.
+    @abstract_interface_method
+    def set_sweep(self, start=None, stop=None, step=None, power=None):
+        """  Configures the device for sweep-mode and optionally sets frequency start/stop/step and/or power
+
+        @return float, float, float, float, str: current start frequency in Hz,
+                                                 current stop frequency in Hz,
+                                                 current frequency step in Hz,
+                                                 current power in dBm,
+                                                 current mode
         """
         pass
 
-    @abc.abstractmethod
-    def reset_sweep(self):
-        """ Reset of MW sweep position to start
+    @abstract_interface_method
+    def reset_sweeppos(self):
+        """ Reset of MW sweep mode position to start (start frequency)
 
         @return int: error code (0:OK, -1:error)
         """
         pass
 
-    @abc.abstractmethod
-    def set_ext_trigger(self, pol=TriggerEdge.RISING):
+    @abstract_interface_method
+    def set_ext_trigger(self, pol, timing):
         """ Set the external trigger for this device with proper polarization.
 
-        @param TriggerEdge pol: polarisation of the trigger (basically rising edge or
-                        falling edge)
+        @param TriggerEdge pol: polarisation of the trigger (basically rising edge or falling edge)
+        @param timing: estimated time between triggers
 
-        @return int: error code (0:OK, -1:error)
+        @return object, float: current trigger polarity [TriggerEdge.RISING, TriggerEdge.FALLING],
+            trigger timing as queried from device
         """
         pass
 
-    @abc.abstractmethod
+    def trigger(self):
+        """ Trigger the next element in the list or sweep mode programmatically.
+
+        @return int: error code (0:OK, -1:error)
+
+        Ensure that the Frequency was set AFTER the function returns, or give
+        the function at least a save waiting time corresponding to the
+        frequency switching speed.
+        """
+        pass
+
+    @abstract_interface_method
     def get_limits(self):
         """ Return the device-specific limits in a nested dictionary.
 

@@ -19,24 +19,29 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-import logging
 import core.logger
+import logging
+import numpy as np
+import os
+
+from collections import OrderedDict
+from core.statusvariable import StatusVar
+from core.util.modules import get_main_dir
+from .errordialog import ErrorDialog
 from gui.guibase import GUIBase
 from qtpy import QtCore, QtWidgets, uic
 from qtpy.QtGui import QPalette
 from qtpy.QtWidgets import QWidget
+
 try:
     from qtconsole.inprocess import QtInProcessKernelManager
 except ImportError:
     from IPython.qt.inprocess import QtInProcessKernelManager
+
 try:
     from git import Repo
 except:
     pass
-from collections import OrderedDict
-from .errordialog import ErrorDialog
-import numpy as np
-import os
 
 try:
     import pyqtgraph as pg
@@ -49,6 +54,7 @@ except:
 
 
 class ManagerGui(GUIBase):
+
     """This class provides a GUI to the Qudi manager.
 
       @signal sigStartAll: sent when all modules should be loaded
@@ -59,6 +65,11 @@ class ManagerGui(GUIBase):
       It supports module loading, reloading, logging and other
       administrative tasks.
     """
+
+    # status vars
+    consoleFontSize = StatusVar('console_font_size', 10)
+
+    # signals
     sigStartAll = QtCore.Signal()
     sigStartModule = QtCore.Signal(str, str)
     sigReloadModule = QtCore.Signal(str, str)
@@ -154,14 +165,21 @@ class ManagerGui(GUIBase):
         # thread widget
         self._mw.threadWidget.threadListView.setModel(self._manager.tm)
         # remote widget
-        self._mw.remoteWidget.hostLabel.setText('URL:')
-        self._mw.remoteWidget.portLabel.setText(
-            'rpyc://{0}:{1}/'.format(self._manager.rm.host,
-                                     self._manager.rm.server.port))
-        self._mw.remoteWidget.remoteModuleListView.setModel(
-            self._manager.rm.remoteModules)
-        self._mw.remoteWidget.sharedModuleListView.setModel(
-            self._manager.rm.sharedModules)
+        # hide remote menu item if rpyc is not available
+        self._mw.actionRemoteView.setVisible(self._manager.rm is not None)
+        if self._manager.rm is not None:
+            self._mw.remoteWidget.remoteModuleListView.setModel(self._manager.rm.remoteModules)
+            if self._manager.remote_server:
+                self._mw.remoteWidget.hostLabel.setText('Server URL:')
+                self._mw.remoteWidget.portLabel.setText(
+                    'rpyc://{0}:{1}/'.format(self._manager.rm.server.host,
+                                             self._manager.rm.server.port))
+                self._mw.remoteWidget.sharedModuleListView.setModel(
+                    self._manager.rm.sharedModules)
+            else:
+                self._mw.remoteWidget.hostLabel.setVisible(False)
+                self._mw.remoteWidget.portLabel.setVisible(False)
+                self._mw.remoteWidget.sharedModuleListView.setVisible(False)
 
         self._mw.configDisplayDockWidget.hide()
         self._mw.remoteDockWidget.hide()
@@ -212,7 +230,7 @@ class ManagerGui(GUIBase):
             text,
             QtWidgets.QMessageBox.Yes,
             QtWidgets.QMessageBox.No
-            )
+        )
         if result == QtWidgets.QMessageBox.Yes:
             self.sigRealQuit.emit()
 
@@ -283,7 +301,7 @@ class ManagerGui(GUIBase):
         """ Create an IPython console widget and connect it to an IPython
         kernel.
         """
-        if (_has_pyqtgraph):
+        if _has_pyqtgraph:
             banner_modules = 'The numpy and pyqtgraph modules have already ' \
                              'been imported as ''np'' and ''pg''.'
         else:
@@ -297,8 +315,7 @@ Go, play.
 """.format(banner_modules)
         self._mw.consolewidget.banner = banner
         # font size
-        if 'console_font_size' in self._statusVariables:
-            self.consoleSetFontSize(self._statusVariables['console_font_size'])
+        self.consoleSetFontSize(self.consoleFontSize)
         # settings
         self._csd = ConsoleSettingsDialog()
         self._csd.accepted.connect(self.consoleApplySettings)
@@ -347,11 +364,7 @@ Go, play.
     def consoleKeepSettings(self):
         """ Write old values into config dialog.
         """
-        if 'console_font_size' in self._statusVariables:
-            self._csd.fontSizeBox.setProperty(
-                'value', self._statusVariables['console_font_size'])
-        else:
-            self._csd.fontSizeBox.setProperty('value', 10)
+        self._csd.fontSizeBox.setProperty('value', self.consoleFontSize)
 
     def consoleApplySettings(self):
         """ Apply values from config dialog to console.
@@ -360,7 +373,7 @@ Go, play.
 
     def consoleSetFontSize(self, fontsize):
         self._mw.consolewidget.font_size = fontsize
-        self._statusVariables['console_font_size'] = fontsize
+        self.consoleFontSize = fontsize
         self._mw.consolewidget.reset_font()
 
     def updateConfigWidgets(self):
@@ -385,7 +398,7 @@ Go, play.
           @param str base: module category to fill
         """
         for module in self._manager.tree['defined'][base]:
-            if not module in self._manager.tree['global']['startup']:
+            if module not in self._manager.tree['global']['startup']:
                 widget = ModuleListItem(self._manager, base, module)
                 self.modlist.append(widget)
                 layout.addWidget(widget)
@@ -435,14 +448,14 @@ Go, play.
             a git repository.
         """
         try:
-            repo = Repo(self.get_main_dir())
+            repo = Repo(get_main_dir())
             branch = repo.active_branch
             rev = str(repo.head.commit)
-            return (rev, str(branch))
+            return rev, str(branch)
 
         except Exception as e:
             print('Could not get git repo because:', e)
-            return ('unknown', -1)
+            return 'unknown', -1
 
     def fillTreeWidget(self, widget, value):
         """ Fill a QTreeWidget with the content of a dictionary
@@ -472,7 +485,7 @@ Go, play.
         """ Ask the user for a file where the configuration should be loaded
             from
         """
-        defaultconfigpath = os.path.join(self.get_main_dir(), 'config')
+        defaultconfigpath = os.path.join(get_main_dir(), 'config')
         filename = QtWidgets.QFileDialog.getOpenFileName(
             self._mw,
             'Load Configration',
@@ -493,7 +506,7 @@ Go, play.
         """ Ask the user for a file where the configuration should be saved
             to.
         """
-        defaultconfigpath = os.path.join(self.get_main_dir(), 'config')
+        defaultconfigpath = os.path.join(get_main_dir(), 'config')
         filename = QtWidgets.QFileDialog.getSaveFileName(
             self._mw,
             'Save Configration',
@@ -504,6 +517,7 @@ Go, play.
 
 
 class ManagerMainWindow(QtWidgets.QMainWindow):
+
     """ This class represents the Manager Window.
     """
 
@@ -528,6 +542,7 @@ class ManagerMainWindow(QtWidgets.QMainWindow):
 
 
 class AboutDialog(QtWidgets.QDialog):
+
     """ This class represents the Qudi About dialog.
     """
 
@@ -544,12 +559,13 @@ class AboutDialog(QtWidgets.QDialog):
 
 
 class ConsoleSettingsDialog(QtWidgets.QDialog):
+
     """ Create the SettingsDialog window, based on the corresponding *.ui
         file.
     """
 
     def __init__(self):
-         # Get the path to the *.ui file
+        # Get the path to the *.ui file
         this_dir = os.path.dirname(__file__)
         ui_file = os.path.join(this_dir, 'ui_console_settings.ui')
 
@@ -559,6 +575,7 @@ class ConsoleSettingsDialog(QtWidgets.QDialog):
 
 
 class ModuleListItem(QtWidgets.QFrame):
+
     """ This class represents a module widget in the Qudi module list.
 
       @signal str str sigLoadThis: gives signal with base and name of module
@@ -603,8 +620,9 @@ class ModuleListItem(QtWidgets.QFrame):
         """ Send signal to load and activate this module.
         """
         self.sigLoadThis.emit(self.base, self.name)
-        if self.base == 'gui':
-            self.loadButton.setText('Show {0}'.format(self.name))
+        
+        # Instant return to checked to prevent visual lag before checkModuleState completes
+        self.loadButton.setChecked(True)
 
     def reloadButtonClicked(self):
         """ Send signal to reload this module.
@@ -622,17 +640,47 @@ class ModuleListItem(QtWidgets.QFrame):
         self.sigCleanupStatus.emit(self.base, self.name)
 
     def checkModuleState(self):
-        """ Get the state of this module and display it in the statusLabel
+        """ Get the state of this module and update visual indications in the GUI.
+
+            Modules cannot be unloaded, but they can be deactivated.
+
+            Once loaded, the "load <module>" button will remain checked and its text
+            will be updated to indicate that loading is no longer possible.
         """
         state = ''
         if self.statusLabel.text() != 'exception, cannot get state':
             try:
                 if (self.base in self.manager.tree['loaded']
                         and self.name in self.manager.tree['loaded'][self.base]):
-                    state = self.manager.tree['loaded'][self.base][self.name].getState()
+                    state = self.manager.tree['loaded'][self.base][self.name].module_state()
+
+                    if state != 'deactivated':
+                        self.reloadButton.setEnabled(True)
+                        self.deactivateButton.setEnabled(True)
+                        self.cleanupButton.setEnabled(False)
+                        self.loadButton.setChecked(True)
+
+                        if self.base == 'gui':
+                            self.loadButton.setText('Show {0}'.format(self.name))
+                        else:
+                            self.loadButton.setText(self.name)
+                    else:
+                        self.reloadButton.setEnabled(True)
+                        self.deactivateButton.setEnabled(False)
+                        self.cleanupButton.setEnabled(True)
+                        self.loadButton.setChecked(True)
+
+                        self.loadButton.setText('Activate {0}'.format(self.name))
+
                 else:
                     state = 'not loaded'
+                    self.reloadButton.setEnabled(False)
+                    self.deactivateButton.setEnabled(False)
+                    self.cleanupButton.setEnabled(True)
             except:
                 state = 'exception, cannot get state'
+                self.reloadButton.setEnabled(True)
+                self.deactivateButton.setEnabled(True)
+                self.cleanupButton.setEnabled(True)
 
             self.statusLabel.setText(state)

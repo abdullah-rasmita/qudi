@@ -24,45 +24,40 @@ import time
 import os
 import numpy as np
 
-from core.base import Base
+from core.module import Base
+from core.configoption import ConfigOption
+from core.util.modules import get_main_dir
 from interface.fast_counter_interface import FastCounterInterface
 
 
-class InterfaceImplementationError(Exception):
-    def __init__(self, value):
-        self.value = value
-    def __str__(self):
-        return repr(self.value)
-
 class FastCounterDummy(Base, FastCounterInterface):
-    """This is the Interface class to define the controls for the simple
-    microwave hardware.
+    """ Implementation of the FastCounter interface methods for a dummy usage.
+
+    Example config for copy-paste:
+
+    fastcounter_dummy:
+        module.Class: 'fast_counter_dummy.FastCounterDummy'
+        gated: False
+        #load_trace: None # path to the saved dummy trace
+
     """
-    _modclass = 'fastcounterinterface'
-    _modtype = 'hardware'
+
+    # config option
+    _gated = ConfigOption('gated', False, missing='warn')
+    trace_path = ConfigOption('load_trace', None)
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
 
-        self.log.info('The following configuration was found.')
+        self.log.debug('The following configuration was found.')
 
         # checking for the right configuration
         for key in config.keys():
             self.log.info('{0}: {1}'.format(key,config[key]))
 
-        if 'gated' in config.keys():
-            self._gated = config['gated']
-        else:
-            self._gated = False
-            self.log.warning('No parameter "gated" was specified in the '
-                        'config. The default configuration gated={0} will be '
-                        'taken instead.'.format(self._gated))
-
-        if 'load_trace' in config.keys():
-            self.trace_path = config['load_trace']
-        else:
+        if self.trace_path is None:
             self.trace_path = os.path.join(
-                self.get_main_dir(),
+                get_main_dir(),
                 'tools',
                 'FastComTec_demo_timetrace.asc')
 
@@ -161,9 +156,12 @@ class FastCounterDummy(Base, FastCounterInterface):
         time.sleep(1)
         self.statusvar = 2
         try:
-            self._count_data = np.loadtxt(self.trace_path)
+            self._count_data = np.loadtxt(self.trace_path, dtype='int64')
         except:
             return -1
+
+        if self._gated:
+            self._count_data = self._count_data.transpose()
         return 0
 
     def pause_measure(self):
@@ -215,15 +213,22 @@ class FastCounterDummy(Base, FastCounterInterface):
         The binning, specified by calling configure() in forehand, must be
         taken care of in this hardware class. A possible overflow of the
         histogram bins must be caught here and taken care of.
-        If the counter is NOT GATED it will return a 1D-numpy-array with
+        If the counter is NOT GATED it will return a tuple (1D-numpy-array, info_dict) with
             returnarray[timebin_index]
-        If the counter is GATED it will return a 2D-numpy-array with
+        If the counter is GATED it will return a tuple (2D-numpy-array, info_dict) with
             returnarray[gate_index, timebin_index]
+
+        info_dict is a dictionary with keys :
+            - 'elapsed_sweeps' : the elapsed number of sweeps
+            - 'elapsed_time' : the elapsed time in seconds
+
+        If the hardware does not support these features, the values should be None
         """
 
         # include an artificial waiting time
         time.sleep(0.5)
-        return self._count_data
+        info_dict = {'elapsed_sweeps': None, 'elapsed_time': None}
+        return self._count_data, info_dict
 
     def get_frequency(self):
         freq = 950.

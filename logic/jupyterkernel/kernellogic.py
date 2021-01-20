@@ -26,17 +26,19 @@ import time
 
 from .qzmqkernel import QZMQKernel
 from core.util.network import netobtain
-#-----------------------------------------------------------------------------
+
+
+# -----------------------------------------------------------------------------
 # The Qudi logic module
-#-----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 
 class QudiKernelLogic(GenericLogic):
     """ Logic module providing a Jupyer-compatible kernel connected via ZMQ."""
-    _modclass = 'QudiKernelLogic'
-    _modtype = 'logic'
 
     sigStartKernel = QtCore.Signal(str)
     sigStopKernel = QtCore.Signal(int)
+
     def __init__(self, **kwargs):
         """ Create logic object
           @param dict kwargs: additional parameters as a dict
@@ -75,20 +77,22 @@ class QudiKernelLogic(GenericLogic):
         """
         realconfig = netobtain(config)
         self.log.debug('Start {0}'.format(realconfig))
-        mythread = self.getModuleThread()
         kernel = QZMQKernel(realconfig)
-        kernel.moveToThread(mythread)
+        kernelthread = self._manager.tm.newThread('kernel-{0}'.format(kernel.engine_id))
+        kernel.moveToThread(kernelthread)
         kernel.user_global_ns.update({
             'pg': pg,
             'np': np,
             'config': self._manager.tree['defined'],
             'manager': self._manager
-            })
+        })
         kernel.sigShutdownFinished.connect(self.cleanupKernel)
         self.log.debug('Kernel is {0}'.format(kernel.engine_id))
-        QtCore.QMetaObject.invokeMethod(kernel, 'connect_kernel')
+        kernelthread.start()
+        QtCore.QMetaObject.invokeMethod(kernel, 'connect_kernel', QtCore.Qt.BlockingQueuedConnection)
         self.kernellist[kernel.engine_id] = kernel
         self.log.info('Finished starting Kernel {0}'.format(kernel.engine_id))
+
         self.sigStartKernel.emit(kernel.engine_id)
         return kernel.engine_id
 
@@ -108,6 +112,7 @@ class QudiKernelLogic(GenericLogic):
           @param callable external: reference to rpyc client exit function
         """
         self.log.info('Cleanup kernel {0}'.format(kernelid))
+        self._manager.tm.quitThread('kernel-{0}'.format(kernelid))
         del self.kernellist[kernelid]
         if external is not None:
             try:

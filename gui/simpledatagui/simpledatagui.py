@@ -20,13 +20,15 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
+import numpy as np
+import os
+
+from core.connector import Connector
+from gui.guibase import GUIBase
+from gui.colordefs import QudiPalettePale as palette
 from qtpy import QtWidgets
 from qtpy import QtCore
 from qtpy import uic
-from gui.guibase import GUIBase
-from gui.colordefs import QudiPalettePale as palette
-import numpy as np
-import os
 
 
 class SimpleMainWindow(QtWidgets.QMainWindow):
@@ -46,18 +48,15 @@ class SimpleMainWindow(QtWidgets.QMainWindow):
 class SimpleDataGui(GUIBase):
     """ FIXME: Please document
     """
-    _modclass = 'simplegui'
-    _modtype = 'gui'
-
-    ## declare connectors
-    _connectors = {'simplelogic': 'SimpleDataLogic'}
+    # declare connectors
+    simplelogic = Connector(interface='SimpleDataLogic')
 
     sigStart = QtCore.Signal()
     sigStop = QtCore.Signal()
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
-        self.log.info('The following configuration was found.')
+        self.log.debug('The following configuration was found.')
 
         # checking for the right configuration
         for key in config.keys():
@@ -66,7 +65,7 @@ class SimpleDataGui(GUIBase):
     def on_activate(self):
         """ Definition and initialisation of the GUI.
         """
-        self._simple_logic = self.get_connector('simplelogic')
+        self._simple_logic = self.simplelogic()
 
         #####################
         # Configuring the dock widgets
@@ -137,7 +136,7 @@ class SimpleDataGui(GUIBase):
                 x=np.arange(0, len(self._simple_logic.smooth[24:-25-10]))
                 )
 
-        if self._simple_logic.getState() == 'locked':
+        if self._simple_logic.module_state() == 'locked':
             self._mw.startAction.setText('Stop')
         else:
             self._mw.startAction.setText('Start')
@@ -145,7 +144,7 @@ class SimpleDataGui(GUIBase):
     def start_clicked(self):
         """ Handling the Start button to stop and restart the counter.
         """
-        if self._simple_logic.getState() == 'locked':
+        if self._simple_logic.module_state() == 'locked':
             self._mw.startAction.setText('Start')
             self.sigStop.emit()
         else:

@@ -19,25 +19,25 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-from qtpy import QtCore
 import numpy as np
 
+from core.connector import Connector
 from logic.generic_logic import GenericLogic
+from qtpy import QtCore
 
 
 class SimpleDataLogic(GenericLogic):
     """ Logic module agreggating multiple hardware switches.
     """
-    _modclass = 'smple_data'
-    _modtype = 'logic'
-    _connectors = {'simpledata': 'SimpleDataInterface'}
+
+    simpledata = Connector(interface='SimpleDataInterface')
 
     sigRepeat = QtCore.Signal()
 
     def on_activate(self):
         """ Prepare logic module for work.
         """
-        self._data_logic = self.get_connector('simpledata')
+        self._data_logic = self.simpledata()
         self.stopRequest = False
         self.bufferLength = 10000
         self.sigRepeat.connect(self.measureLoop, QtCore.Qt.QueuedConnection)
@@ -52,7 +52,7 @@ class SimpleDataLogic(GenericLogic):
         self.window_len = 50
         self.buf = np.zeros((self.bufferLength,  self._data_logic.getChannels()))
         self.smooth = np.zeros((self.bufferLength + self.window_len - 1,  self._data_logic.getChannels()))
-        self.lock()
+        self.module_state.lock()
         self.sigRepeat.emit()
 
     def stopMeasure(self):
@@ -64,7 +64,7 @@ class SimpleDataLogic(GenericLogic):
         """
         if self.stopRequest:
             self.stopRequest = False
-            self.unlock()
+            self.module_state.unlock()
             return
 
         data = np.zeros((100,  self._data_logic.getChannels()))

@@ -21,48 +21,41 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 
 from influxdb import InfluxDBClient
 
-from core.base import Base
+from core.module import Base
+from core.configoption import ConfigOption
 from interface.process_interface import ProcessInterface
 
 
 class InfluxDataClient(Base, ProcessInterface):
     """ Retrieve live data from InfluxDB as if the measurement device was connected directly.
+
+    Example config for copy-paste:
+
+    influx_data_client:
+        module.Class: 'influx_data_client.InfluxDataClient'
+        user: 'client_user'
+        password: 'client_password'
+        dbname: 'db_name'
+        host: 'localhost'
+        port: 8086
+        dataseries: 'data_series_name'
+        field: 'field_name'
+        criterion: 'criterion_name'
+
     """
 
-    _modclass = 'InfluxDataClient'
-    _modtype = 'hardware'
+    user = ConfigOption('user', missing='error')
+    pw = ConfigOption('password', missing='error')
+    dbname = ConfigOption('dbname', missing='error')
+    host = ConfigOption('host', missing='error')
+    port = ConfigOption('port', default=8086)
+    series = ConfigOption('dataseries', missing='error')
+    field = ConfigOption('field', missing='error')
+    cr = ConfigOption('criterion', missing='error')
 
     def on_activate(self):
         """ Activate module.
         """
-        config = self.getConfiguration()
-
-        if 'user' in config:
-            self.user = config['user']
-
-        if 'password' in config:
-            self.pw = config['password']
-
-        if 'dbname' in config:
-            self.dbname = config['dbname']
-
-        if 'host' in config:
-            self.host = config['host']
-
-        if 'port' in config:
-            self.port = config['port']
-        else:
-            self.port = 8086
-
-        if 'dataseries' in config:
-            self.series = config['dataseries']
-
-        if 'field' in config:
-            self.field = config['field']
-
-        if 'criterion' in config:
-            self.cr = config['criterion']
-
         self.connect_db()
 
     def on_deactivate(self):
@@ -74,14 +67,13 @@ class InfluxDataClient(Base, ProcessInterface):
         """ Connect to Influx database """
         self.conn = InfluxDBClient(self.host, self.port, self.user, self.pw, self.dbname)
 
-    def getProcessValue(self):
+    def get_process_value(self):
         """ Return a measured value """
         q = 'SELECT last({0}) FROM {1} WHERE (time > now() - 10m AND {2})'.format(self.field, self.series, self.cr)
-        #print(q)
         res = self.conn.query(q)
         return list(res[('{0}'.format(self.series), None)])[0]['last']
 
-    def getProcessUnit(self):
+    def get_process_unit(self):
         """ Return the unit that the value is measured in
 
             @return (str, str): a tuple of ('abreviation', 'full unit name')

@@ -301,7 +301,7 @@ def make_twoDgaussian_model(self, prefix=None):
 # 1D Gaussian with flat offset    #
 ###################################
 
-def make_gaussian_fit(self, x_axis, data, estimator, units=None, add_params=None):
+def make_gaussian_fit(self, x_axis, data, estimator, units=None, add_params=None, **kwargs):
     """ Perform a 1D gaussian peak fit on the provided data.
 
     @param numpy.array x_axis: 1D axis values
@@ -325,12 +325,40 @@ def make_gaussian_fit(self, x_axis, data, estimator, units=None, add_params=None
     params = self._substitute_params(initial_params=params,
                                      update_params=add_params)
     try:
-        result = mod_final.fit(data, x=x_axis, params=params)
+        result = mod_final.fit(data, x=x_axis, params=params, **kwargs)
     except:
         self.log.warning('The 1D gaussian peak fit did not work. Error '
                        'message: {0}\n'.format(result.message))
 
+    if units is None:
+            units = ['arb. unit', 'arb. unit']
+
+    result_str_dict = OrderedDict()  # create result string for gui
+
+    #result_str_dict['Amplitude'] = {'value': result.params['amplitude'].value,
+    #                                    'error': result.params['amplitude'].stderr,
+    #                                    'unit': units[1]}                               #amplitude
+
+    result_str_dict['Position'] = {'value': result.params['center'].value,
+                                        'error': result.params['center'].stderr,
+                                        'unit': units[0]}                               #position
+
+    #result_str_dict['Standard deviation'] = {'value': result.params['sigma'].value,
+    #                                'error': result.params['sigma'].stderr,
+    #                                'unit': units[0]}                               #standart deviation
+
+    result_str_dict['Linewidth'] = {'value': result.params['fwhm'].value,
+                                        'error': result.params['fwhm'].stderr,
+                                        'unit': units[0]}                               #FWHM
+
+    result_str_dict['Contrast'] = {'value': result.params['contrast'].value,
+                                        'error': result.params['contrast'].stderr,
+                                        'unit': '%'}                                    #Contrast
+    result.result_str_dict = result_str_dict
+
     return result
+
+
 
 def estimate_gaussian_peak(self, x_axis, data, params):
     """ Provides a gaussian offset peak estimator.
@@ -384,7 +412,7 @@ def estimate_gaussian_peak(self, x_axis, data, params):
 
     # calculate the second moment of the gaussian distribution:
     #   int (x^2 * f(x) dx) :
-    mom2 = np.sum((x_axis)**2 * data_smoothed) / np.sum(data_smoothed)
+    mom2 = np.sum(x_axis ** 2 * data_smoothed) / np.sum(data_smoothed)
 
     # and use the standard formula to obtain the standard deviation:
     #   sigma^2 = int( (x - mean)^2 f(x) dx ) = int (x^2 * f(x) dx) - mean^2
@@ -446,9 +474,8 @@ def estimate_gaussian_dip(self, x_axis, data, params):
 # 1D Gaussian with linear inclined offset    #
 ##############################################
 
-def make_gaussianlinearoffset_fit(self, x_axis, data, estimator, units=None, add_params=None):
+def make_gaussianlinearoffset_fit(self, x_axis, data, estimator, units=None, add_params=None, **kwargs):
     """ Perform a 1D gaussian peak fit with linear offset on the provided data.
-
     @param numpy.array x_axis: 1D axis values
     @param numpy.array data: 1D data, should have the same dimension as x_axis.
     @param method estimator: Pointer to the estimator method
@@ -456,7 +483,6 @@ def make_gaussianlinearoffset_fit(self, x_axis, data, estimator, units=None, add
     @param Parameters or dict add_params: optional, additional parameters of
                 type lmfit.parameter.Parameters, OrderedDict or dict for the fit
                 which will be used instead of the values from the estimator.
-
     @return object model: lmfit.model.ModelFit object, all parameters
                           provided about the fitting, like: success,
                           initial fitting values, best fitting values, data
@@ -470,10 +496,40 @@ def make_gaussianlinearoffset_fit(self, x_axis, data, estimator, units=None, add
     params = self._substitute_params(initial_params=params,
                                      update_params=add_params)
     try:
-        result = mod_final.fit(data, x=x_axis, params=params)
+        result = mod_final.fit(data, x=x_axis, params=params, **kwargs)
     except:
         self.log.warning('The 1D gaussian peak fit did not work. Error '
                        'message: {0}\n'.format(result.message))
+    if units is None:
+            units = ['arb. unit', 'arb. unit']
+
+    result_str_dict = OrderedDict()  # create result string for gui
+
+    #result_str_dict['Amplitude'] = {'value': result.params['amplitude'].value,
+    #                                    'error': result.params['amplitude'].stderr,
+    #                                    'unit': units[1]}                               #amplitude
+
+    result_str_dict['Position'] = {'value': result.params['center'].value,
+                                        'error': result.params['center'].stderr,
+                                        'unit': units[0]}                               #position
+
+    #result_str_dict['Standard deviation'] = {'value': result.params['sigma'].value,
+    #                                'error': result.params['sigma'].stderr,
+    #                                'unit': units[0]}                               #standart deviation
+
+    result_str_dict['Linewidth'] = {'value': result.params['fwhm'].value,
+                                        'error': result.params['fwhm'].stderr,
+                                        'unit': units[0]}                               #FWHM
+
+    result_str_dict['Contrast'] = {'value': result.params['contrast'].value,
+                                        'error': result.params['contrast'].stderr,
+                                        'unit': '%'}                                    #Contrast
+
+    #result_str_dict['Slope'] = {'value': result.params['slope'].value,
+    #                                    'error': result.params['slope'].stderr,
+    #                                    'unit': ''}                                    #Slope
+
+    result.result_str_dict = result_str_dict
 
     return result
 
@@ -533,7 +589,7 @@ def make_gaussiandouble_fit(self, x_axis, data, estimator,
                             add_params=None,
                             threshold_fraction=0.4,
                             minimal_threshold=0.2,
-                            sigma_threshold_fraction=0.3):
+                            sigma_threshold_fraction=0.3, **kwargs):
     """ Perform a 1D two gaussian dip fit on the provided data.
 
     @param numpy.array x_axis: 1D axis values
@@ -555,7 +611,7 @@ def make_gaussiandouble_fit(self, x_axis, data, estimator,
                           with best fit with given axis,...
     """
     if units is None:
-        units = ['fucking units', 'other fucking units']
+        units = ['arb. unit', 'arb. unit']
 
     model, params = self.make_multiplegaussianoffset_model(no_of_functions=2)
 
@@ -568,9 +624,9 @@ def make_gaussiandouble_fit(self, x_axis, data, estimator,
     params = self._substitute_params(initial_params=params,
                                      update_params=add_params)
     try:
-        result = model.fit(data, x=x_axis, params=params)
+        result = model.fit(data, x=x_axis, params=params, **kwargs)
     except:
-        result = model.fit(data, x=x_axis, params=params)
+        result = model.fit(data, x=x_axis, params=params, **kwargs)
         self.log.warning('The double gaussian dip fit did not work: {0}'.format(
             result.message))
 
@@ -702,7 +758,7 @@ def estimate_gaussiandouble_dip(self, x_axis, data, params,
 # TODO: I think this has an offset, and it should be named so to be consistent with
 #       the 1D functions.
 
-def make_twoDgaussian_fit(self, xy_axes, data, estimator, units=None, add_params=None):
+def make_twoDgaussian_fit(self, xy_axes, data, estimator, units=None, add_params=None, **kwargs):
     """ This method performes a 2D gaussian fit on the provided data.
 
     @param numpy.array xy_axes: 2D axes values. xy_axes[0] contains x_axis and
@@ -731,9 +787,9 @@ def make_twoDgaussian_fit(self, xy_axes, data, estimator, units=None, add_params
     params = self._substitute_params(initial_params=params,
                                      update_params=add_params)
     try:
-        result = gaussian_2d_model.fit(data, x=xy_axes, params=params)
+        result = gaussian_2d_model.fit(data, x=xy_axes, params=params, **kwargs)
     except:
-        result = gaussian_2d_model.fit(data, x=xy_axes, params=params)
+        result = gaussian_2d_model.fit(data, x=xy_axes, params=params, **kwargs)
         self.log.warning('The 2D gaussian fit did not work: {0}'.format(
                        result.message))
 

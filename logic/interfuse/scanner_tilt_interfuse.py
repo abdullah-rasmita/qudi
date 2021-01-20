@@ -18,19 +18,18 @@ Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
+import copy
+
+from core.connector import Connector
 from logic.generic_logic import GenericLogic
 from interface.confocal_scanner_interface import ConfocalScannerInterface
-import copy
 
 
 class ScannerTiltInterfuse(GenericLogic, ConfocalScannerInterface):
     """ This interfuse produces a Z correction corresponding to a tilted surface.
     """
 
-    _modclass = 'ScannerTiltInterfuse'
-    _modtype = 'interfuse'
-
-    _connectors = {'confocalscanner1': 'ConfocalScannerInterface'}
+    confocalscanner1 = Connector(interface='ConfocalScannerInterface')
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -38,7 +37,7 @@ class ScannerTiltInterfuse(GenericLogic, ConfocalScannerInterface):
     def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
-        self._scanning_device = self.get_connector('confocalscanner1')
+        self._scanning_device = self.confocalscanner1()
 
         self.tilt_variable_ax = 1
         self.tilt_variable_ay = 1

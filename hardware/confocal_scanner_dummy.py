@@ -22,34 +22,32 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 import numpy as np
 import time
 
-from core.base import Base
+from core.module import Base
+from core.connector import Connector
+from core.configoption import ConfigOption
 from interface.confocal_scanner_interface import ConfocalScannerInterface
 
 
 class ConfocalScannerDummy(Base, ConfocalScannerInterface):
+    """ Dummy confocal scanner. Produces a picture with several gaussian spots.
 
-    """ Dummy confocal scanner.
-        Produces a picture with several gaussian spots.
+    Example config for copy-paste:
+
+    confocal_scanner_dummy:
+        module.Class: 'confocal_scanner_dummy.ConfocalScannerDummy'
+        clock_frequency: 100 # in Hz
+        fitlogic: 'fitlogic' # name of the fitlogic module, see default config
+
     """
-    _modclass = 'ConfocalScannerDummy'
-    _modtype = 'hardware'
+
     # connectors
-    _connectors = {'fitlogic': 'FitLogic'}
+    fitlogic = Connector(interface='FitLogic')
+
+    # config
+    _clock_frequency = ConfigOption('clock_frequency', 100, missing='warn')
 
     def __init__(self, config, **kwargs):
         super().__init__(config=config, **kwargs)
-
-        self.log.info('The following configuration was found.')
-
-        # checking for the right configuration
-        for key in config.keys():
-            self.log.info('{0}: {1}'.format(key, config[key]))
-
-        if 'clock_frequency' in config.keys():
-            self._clock_frequency = config['clock_frequency']
-        else:
-            self._clock_frequency = 100
-            self.log.warning('No clock_frequency configured taking 100 Hz instead.')
 
         # Internal parameters
         self._line_length = None
@@ -63,7 +61,7 @@ class ConfocalScannerDummy(Base, ConfocalScannerInterface):
         """ Initialisation performed during activation of the module.
         """
 
-        self._fit_logic = self.get_connector('fitlogic')
+        self._fit_logic = self.fitlogic()
 
         # put randomly distributed NVs in the scanner, first the x,y scan
         self._points = np.empty([self._num_points, 7])
@@ -204,7 +202,7 @@ class ConfocalScannerDummy(Base, ConfocalScannerInterface):
                     'order.'.format(myrange))
             return -1
 
-        if self.getState() == 'locked':
+        if self.module_state() == 'locked':
             self.log.error('A Scanner is already running, close this one '
                     'first.')
             return -1
@@ -216,7 +214,7 @@ class ConfocalScannerDummy(Base, ConfocalScannerInterface):
     def get_scanner_axes(self):
         """ Dummy scanner is always 3D cartesian.
         """
-        return ['x', 'y', 'z']
+        return ['x', 'y', 'z', 'a']
 
     def get_scanner_count_channels(self):
         """ 3 counting channels in dummy confocal: normal, negative and a ramp."""
@@ -273,7 +271,7 @@ class ConfocalScannerDummy(Base, ConfocalScannerInterface):
         @return int: error code (0:OK, -1:error)
         """
 
-        if self.getState() == 'locked':
+        if self.module_state() == 'locked':
             self.log.error('A Scanner is already running, close this one first.')
             return -1
 
@@ -338,7 +336,7 @@ class ConfocalScannerDummy(Base, ConfocalScannerInterface):
         return np.array([
                 count_data,
                 5e5 - count_data,
-                np.ones(count_data.shape) * line_path[1, 0]
+                np.ones(count_data.shape) * line_path[1, 0] * 100
             ]).transpose()
 
     def close_scanner(self):
@@ -427,11 +425,9 @@ class ConfocalScannerDummy(Base, ConfocalScannerInterface):
         if not isinstance( x_data,(frozenset, list, set, tuple, np.ndarray)):
             self.log.error('Given range of axis is no array type.')
 
-
         parameters=[amplitude,x_zero,sigma,offset]
         for var in parameters:
-            if not isinstance(var,(float,int)):
-                print('error',var)
+            if not isinstance(var, (float, int)):
                 self.log.error('Given range of parameter is no float or int.')
         gaussian = amplitude*np.exp(-(x_data-x_zero)**2/(2*sigma**2))+offset
         return gaussian
